@@ -1,6 +1,6 @@
 # модуль главного окна
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QGridLayout, QStatusBar, QHBoxLayout, QPushButton
+from PyQt5.QtWidgets import QWidget, QGridLayout, QStatusBar, QLabel
 from PyQt5.QtGui import QIcon
 
 class UiMainWindow(object):
@@ -20,13 +20,9 @@ class UiMainWindow(object):
         self.gridLayout.setContentsMargins(1, 1, 1, 1)
         self.gridLayout.setObjectName("gridLayout")
 
-
-        # кнопка старт
-        self.startbutton = QPushButton()
-        self.startbutton.setText('СТАРТ')
-        self.startbutton.setEnabled(False)
-        self.startbutton.clicked.connect(self.startbutton_clicked)
-        self.gridLayout.addWidget(self.startbutton, 1, 0, 1, 1)
+        l1 = QLabel('Bot')
+        l1.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.gridLayout.addWidget(l1)
 
         self.statusbar = QStatusBar(mainwindow)
         self.statusbar.setObjectName("statusbar")

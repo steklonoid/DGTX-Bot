@@ -14,9 +14,9 @@ class WSSClient(Thread):
     def run(self) -> None:
         def on_open(wsapp):
             print('open')
-            str = {'id':1, 'message_type':'registration', 'params':{'typereg':'rocket', 'version':self.pc.version}}
-            data = json.dumps(str)
-            self.wsapp.send(data)
+            str = {'id':10, 'message_type':'registration', 'data':{'typereg':'rocket', 'version':self.pc.version}}
+            str = json.dumps(str)
+            self.wsapp.send(str)
 
         def on_close(wsapp, close_status_code, close_msg):
             print('close')
@@ -26,15 +26,7 @@ class WSSClient(Thread):
 
         def on_message(wssapp, message):
             data = json.loads(message)
-            if data.get('registration'):
-                status = data['registration']
-                if status == 'ok':
-                    self.id = data['id']
-                    print(self.id)
-                else:
-                    pass
-            else:
-                pass
+            print(data)
 
         self.wsapp = websocket.WebSocketApp("ws://localhost:6789", on_open=on_open,
                                                        on_close=on_close, on_error=on_error, on_message=on_message)

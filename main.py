@@ -51,7 +51,7 @@ class Contract():
         self.status = kwargs['status']
 
 class MainWindow(QMainWindow, UiMainWindow):
-    version = '1.0.1'
+    version = '1.0.3'
     settings = QSettings("./config.ini", QSettings.IniFormat)   # файл настроек
     lock = Lock()
 
@@ -95,34 +95,8 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def __init__(self):
 
-        def createdb(fname):
-            self.db.setDatabaseName(fname)
-            self.db.open()
-            q1 = QSqlQuery(self.db)
-            q1.prepare("CREATE TABLE users (login TEXT UNIQUE PRIMARY KEY, psw TEXT NOT NULL, apikey TEXT NOT NULL)")
-            q1.exec_()
-
-        def opendb():
-            fname = "./conf.db"
-            if not os.path.exists(fname):
-                createdb(fname)
-
-            self.db.setDatabaseName(fname)
-            self.db.open()
-            if self.db.isOpen():
-                return True
-            else:
-                return False
-
         super().__init__()
         logging.basicConfig(filename='info.log', level=logging.INFO, format='%(asctime)s %(message)s')
-        #  подключаем базу SQLite
-        self.db = QSqlDatabase.addDatabase("QSQLITE", 'maindb')
-        if not opendb():
-            msg_box = QMessageBox()
-            msg_box.setText("Ошибка открытия файла базы данных")
-            msg_box.exec()
-            sys.exit()
 
         # создание визуальной формы
         self.setupui(self)
@@ -173,87 +147,11 @@ class MainWindow(QMainWindow, UiMainWindow):
         # self.analizator.start()
 
     def closeEvent(self, *args, **kwargs):
-        # if self.flAutoLiq:
-        #     self.startbutton.clicked.emit()
-        #     time.sleep(1)
-        #   закрываем соединение с БД
-        if self.db.isOpen():
-            self.db.close()
-
-        # #   завершение работы потоков
-        # self.intimer.flClosing = True
-        # self.senderq.flClosing = True
-        # self.dxthread.flClosing = True
-        # self.analizator.flClosing = True
-        # self.dxthread.wsapp.close()
-        # while self.intimer.is_alive() or self.dxthread.is_alive() or self.analizator.is_alive():
-        #     pass
+        pass
 
     def returnid(self):
         id = str(round(time.time()) * 1000000 + random.randrange(1000000))
         return id
-
-    def authuser(self):
-        IV_SIZE = 16  # 128 bit, fixed for the AES algorithm
-        KEY_SIZE = 32  # 256 bit meaning AES-256, can also be 128 or 192 bits
-        SALT_SIZE = 16  # This size is arbitrary
-        q1 = QSqlQuery(self.db)
-        q1.prepare("SELECT apikey FROM users WHERE login=:userlogin")
-        q1.bindValue(":userlogin", self.user)
-        q1.exec_()
-        if q1.next():
-            en_ak_int = int(q1.value(0))
-            en_ak_byte = en_ak_int.to_bytes((en_ak_int.bit_length() + 7) // 8, sys.byteorder)
-            salt = en_ak_byte[0:SALT_SIZE]
-            derived = hashlib.pbkdf2_hmac('sha256', self.psw.encode('utf-8'), salt, 100000,
-                                          dklen=IV_SIZE + KEY_SIZE)
-            iv = derived[0:IV_SIZE]
-            key = derived[IV_SIZE:]
-            ak = AES.new(key, AES.MODE_CFB, iv).decrypt(en_ak_byte[SALT_SIZE:]).decode('utf-8')
-            if self.flConnect:
-                self.dxthread.send_privat('auth', type='token', value=ak)
-
-    def midvol(self):
-        if self.tickCounter > NUMTICKS:
-            self.lock.acquire()
-            ar = np.array(self.listTick)
-            self.lock.release()
-            self.market_volatility = round(np.mean(ar, axis=0)[2], 2)
-
-    def userlogined(self, user, psw):
-        self.user = user
-        self.psw = psw
-        self.buttonEnter.setText('вход выполнен: '+self.user)
-        self.buttonEnter.setStyleSheet("color:rgb(32, 128, 32); font: bold 11px; border: none;")
-        self.authuser()
-
-    @pyqtSlot()
-    def startbutton_clicked(self):
-        if self.flConnect:
-            self.flAutoLiq = not self.flAutoLiq
-            self.intimer.flWorking = self.flAutoLiq
-            if self.flAutoLiq:
-                self.startbutton.setText('СТОП')
-                self.last_cellprice = 0
-                self.intimer.pnlStartTime = self.intimer.workingStartTime = time.time()
-                self.fundingcount = 0
-                self.fundingmined = 0
-                self.contractmined = 0
-                self.contractcount = 0
-                logging.info('-------------start session------------')
-                logging.info('Баланс: ' + str(self.traderBalance))
-                logging.info('------------------------------------')
-            else:
-                self.startbutton.setText('СТАРТ')
-                self.dxthread.send_privat('cancelAllOrders', symbol=self.symbol)
-                self.dxthread.send_privat('closePosition', symbol=self.symbol, ordType='MARKET')
-                self.listOrders.clear()
-                logging.info('------------------------------------')
-                logging.info('Время работы: ')
-                logging.info('Добыто: ')
-                logging.info('Доход от контрактов: ')
-                logging.info('Баланс: ')
-                logging.info('-------------end session------------')
 
     def fill_data(self, data):
         self.traderBalance = data['traderBalance']
