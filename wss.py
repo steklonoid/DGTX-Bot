@@ -5,59 +5,78 @@ import time
 import logging
 
 
-class WSSClient(Thread):
+class WSSCore(Thread):
     def __init__(self, pc):
-        super(WSSClient, self).__init__()
+        super(WSSCore, self).__init__()
         self.pc = pc
-        self.id = 0
+        self.flClosing = False
 
     def run(self) -> None:
         def on_open(wsapp):
-            print('open')
-            str = {'id':10, 'message_type':'registration', 'data':{'typereg':'rocket', 'version':self.pc.version}}
-            str = json.dumps(str)
-            self.wsapp.send(str)
+            self.pc.flCoreConnect = True
+            self.pc.l_core.setText('Соединение с ядром установлено')
+            self.registration()
 
         def on_close(wsapp, close_status_code, close_msg):
-            print('close')
+            pass
 
         def on_error(wsapp, error):
-            print('error')
+            self.pc.flCoreConnect = False
+            self.pc.l_core.setText('Ошибка соединения с ядром')
+            time.sleep(1)
 
         def on_message(wssapp, message):
-            data = json.loads(message)
-            print(data)
+            mes = json.loads(message)
+            id = mes.get('id')
+            message_type = mes.get('message_type')
+            data = mes.get('data')
+            if message_type == 'cb':
+                command = data.get('command')
+                if command == 'authpilot':
+                    ak = data.get('ak')
+                    self.pc.dxthread.send_privat('auth', type='token', value=ak)
 
-        self.wsapp = websocket.WebSocketApp("ws://localhost:6789", on_open=on_open,
-                                                       on_close=on_close, on_error=on_error, on_message=on_message)
-        self.wsapp.run_forever()
+        while not self.flClosing:
+            try:
+                self.pc.l_core.setText('Устанавливаем соединение с ядром')
+                self.wsapp = websocket.WebSocketApp("ws://localhost:6789", on_open=on_open,
+                                                               on_close=on_close, on_error=on_error, on_message=on_message)
+                self.wsapp.run_forever()
+            except:
+                pass
+            finally:
+                time.sleep(1)
 
-class WSThread(Thread):
+    def registration(self):
+        str = {'id': 10, 'message_type': 'registration', 'data': {'typereg': 'rocket', 'version': self.pc.version}}
+        str = json.dumps(str)
+        self.wsapp.send(str)
+
+
+class WSSDGTX(Thread):
     methods = {'subscribe':1, 'unsubscribe':2, 'subscriptions':3, 'auth':4, 'placeOrder':5, 'cancelOrder':6,
                'cancelAllOrders':7, 'placeCondOrder':8, 'cancelCondOrder':9, 'closeContract':10, 'closePosition':11,
                'getTraderStatus':12, 'changeLeverageAll':13}
     def __init__(self, pc):
-        super(WSThread, self).__init__()
+        super(WSSDGTX, self).__init__()
         self.pc = pc
         self.flClosing = False
 
     def run(self) -> None:
         def on_open(wsapp):
             logging.info('open')
-            self.pc.flConnect = True
-            self.pc.statusbar.showMessage('Есть соединение с сервером')
-            self.changeEx(self.pc.symbol)
+            self.pc.flDGTXConnect = True
+            self.pc.l_DGTX.setText('Соединение с DGTX установлено')
             if self.pc.flAuth:
                 self.pc.authser()
 
         def on_close(wsapp, close_status_code, close_msg):
             logging.info('close / ' + str(close_status_code) + ' / ' + str(close_msg))
-            self.pc.flConnect = False
-            self.pc.statusbar.showMessage('Нет соединения с сервером')
 
         def on_error(wsapp, error):
-            logging.info(error)
-            self.pc.statusbar.showMessage(error)
+            self.pc.flDGTXConnect = False
+            self.pc.l_DGTX.setText('Ошибка соединения с DGTX')
+            time.sleep(1)
 
         def on_message(wssapp, message):
             if message == 'ping':
@@ -75,12 +94,14 @@ class WSThread(Thread):
 
         while not self.flClosing:
             try:
+                self.pc.l_DGTX.setText('Устанавливаем соединение с DGTX')
                 self.wsapp = websocket.WebSocketApp("wss://ws.mapi.digitexfutures.com", on_open=on_open,
                                                     on_close=on_close, on_error=on_error, on_message=on_message)
                 self.wsapp.run_forever()
-                self.pc.statusbar.showMessage('Восстановление соединения с сервером')
             except:
                 pass
+            finally:
+                time.sleep(1)
 
     def changeEx(self, name):
         self.send_public('subscribe', name + '@index', name + '@ticker', name + '@orderbook_1')

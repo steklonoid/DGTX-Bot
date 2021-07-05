@@ -10,7 +10,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSettings, pyqtSlot
 from PyQt5.QtSql import QSqlDatabase, QSqlQuery
 from mainWindow import UiMainWindow
-from wss import WSThread, Worker, Senderq, InTimer, Analizator, WSSClient
+from wss import WSSDGTX, Worker, Senderq, InTimer, Analizator, WSSCore
 import hashlib
 from Crypto.Cipher import AES # pip install pycryptodome
 import math
@@ -89,7 +89,8 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     timerazban = 0
 
-    flConnect = False           #   флаг нормального соединения с сайтом
+    flDGTXConnect = False           #   флаг нормального соединения с сайтом
+    flCoreConnect = False        # флаг нормального соединения с сайтом
     flAuth = False              #   флаг авторизации на сайте (введения правильного API KEY)
     flAutoLiq = False           #   флаг разрешенного авторазмещения ордеров (нажатия кнопки СТАРТ)
 
@@ -102,41 +103,38 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-        # self.sendq = queue.Queue()
+        self.sendq = queue.Queue()
 
-        wssclient = WSSClient(self)
-        wssclient.daemon = True
-        wssclient.start()
-        time.sleep(1)
-        wssclient1 = WSSClient(self)
-        wssclient1.daemon = True
-        wssclient1.start()
-        # self.dxthread = WSThread(self)
-        # self.dxthread.daemon = True
-        # self.dxthread.start()
+        self.wsscore = WSSCore(self)
+        self.wsscore.daemon = True
+        self.wsscore.start()
 
-        # self.senderq = Senderq(self.sendq, self.dxthread)
-        # self.senderq.daemon = True
-        # self.senderq.start()
+        self.dxthread = WSSDGTX(self)
+        self.dxthread.daemon = True
+        self.dxthread.start()
 
-        # self.listf = {'orderbook_1':{'q':queue.LifoQueue(), 'f':self.message_orderbook_1},
-        #               'index':{'q':queue.LifoQueue(), 'f':self.message_index},
-        #               'ticker':{'q':queue.LifoQueue(), 'f':self.message_ticker},
-        #               'tradingStatus': {'q': queue.Queue(), 'f': self.message_tradingStatus},
-        #               'orderStatus': {'q': queue.Queue(), 'f': self.message_orderStatus},
-        #               'orderFilled': {'q': queue.Queue(), 'f': self.message_orderFilled},
-        #               'orderCancelled': {'q': queue.Queue(), 'f': self.message_orderCancelled},
-        #               'contractClosed': {'q': queue.Queue(), 'f': self.message_contractClosed},
-        #               'traderStatus': {'q': queue.Queue(), 'f': self.message_traderStatus},
-        #               'leverage': {'q': queue.Queue(), 'f': self.message_leverage},
-        #               'funding': {'q': queue.Queue(), 'f': self.message_funding},
-        #               'position': {'q': queue.Queue(), 'f': self.message_position}}
-        # self.listp = []
-        # for ch in self.listf.keys():
-        #     p = Worker(self.listf[ch]['q'], self.listf[ch]['f'])
-        #     self.listp.append(p)
-        #     p.daemon = True
-        #     p.start()
+        self.senderq = Senderq(self.sendq, self.dxthread)
+        self.senderq.daemon = True
+        self.senderq.start()
+
+        self.listf = {'orderbook_1':{'q':queue.LifoQueue(), 'f':self.message_orderbook_1},
+                      'index':{'q':queue.LifoQueue(), 'f':self.message_index},
+                      'ticker':{'q':queue.LifoQueue(), 'f':self.message_ticker},
+                      'tradingStatus': {'q': queue.Queue(), 'f': self.message_tradingStatus},
+                      'orderStatus': {'q': queue.Queue(), 'f': self.message_orderStatus},
+                      'orderFilled': {'q': queue.Queue(), 'f': self.message_orderFilled},
+                      'orderCancelled': {'q': queue.Queue(), 'f': self.message_orderCancelled},
+                      'contractClosed': {'q': queue.Queue(), 'f': self.message_contractClosed},
+                      'traderStatus': {'q': queue.Queue(), 'f': self.message_traderStatus},
+                      'leverage': {'q': queue.Queue(), 'f': self.message_leverage},
+                      'funding': {'q': queue.Queue(), 'f': self.message_funding},
+                      'position': {'q': queue.Queue(), 'f': self.message_position}}
+        self.listp = []
+        for ch in self.listf.keys():
+            p = Worker(self.listf[ch]['q'], self.listf[ch]['f'])
+            self.listp.append(p)
+            p.daemon = True
+            p.start()
         #
         # self.intimer = InTimer(self)
         # self.intimer.daemon = True
