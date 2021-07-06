@@ -89,9 +89,11 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     timerazban = 0
 
-    flDGTXConnect = False           #   флаг нормального соединения с сайтом
-    flCoreConnect = False        # флаг нормального соединения с сайтом
-    flAuth = False              #   флаг авторизации на сайте (введения правильного API KEY)
+    flDGTXConnect = False       #   флаг соединения с сайтом DGTX
+    flCoreConnect = False       #   флаг соединения с ядром
+    flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
+    flCoreAuth = False          #   флаг авторизации в ядре
+
     flAutoLiq = False           #   флаг разрешенного авторазмещения ордеров (нажатия кнопки СТАРТ)
 
     def __init__(self):
@@ -291,15 +293,12 @@ class MainWindow(QMainWindow, UiMainWindow):
     # ==== приватные сообщения
     def message_tradingStatus(self, data):
         status = data.get('available')
-        self.startbutton.setEnabled(status)
         if status:
-            self.buttonAK.setStyleSheet("color:rgb(32, 192, 32);font: bold 11px; border: none;")
-            self.buttonAK.setText('верный api key\nнажмите здесь для изменения')
-            self.flAuth = True
-            self.dxthread.send_privat('getTraderStatus', symbol=self.symbol)
+            str = {'command':'authpilot', 'status':'ok'}
         else:
-            self.buttonAK.setStyleSheet("color:rgb(192, 32, 32);font: bold 11px; border: none;")
-            self.buttonAK.setText('не верный api key\nнажмите здесь для изменения')
+            str = {'command': 'authpilot', 'status': 'error'}
+        self.wsscore.senddata(str)
+
 
     def message_orderStatus(self, data):
         self.lock.acquire()

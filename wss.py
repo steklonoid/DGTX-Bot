@@ -23,14 +23,19 @@ class WSSCore(Thread):
         def on_error(wsapp, error):
             self.pc.flCoreConnect = False
             self.pc.l_core.setText('Ошибка соединения с ядром')
-            time.sleep(1)
 
         def on_message(wssapp, message):
             mes = json.loads(message)
             id = mes.get('id')
             message_type = mes.get('message_type')
             data = mes.get('data')
-            if message_type == 'cb':
+            if message_type == 'registration':
+                status = data.get('status')
+                if status == 'ok':
+                    self.pc.flCoreAuth = True
+                else:
+                    self.pc.flCoreAuth = False
+            elif message_type == 'cb':
                 command = data.get('command')
                 if command == 'authpilot':
                     ak = data.get('ak')
@@ -49,6 +54,11 @@ class WSSCore(Thread):
 
     def registration(self):
         str = {'id': 10, 'message_type': 'registration', 'data': {'typereg': 'rocket', 'version': self.pc.version}}
+        str = json.dumps(str)
+        self.wsapp.send(str)
+
+    def senddata(self, data):
+        str = {'id':10, 'message_type':'bc', 'data':data}
         str = json.dumps(str)
         self.wsapp.send(str)
 
