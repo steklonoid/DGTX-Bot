@@ -11,6 +11,7 @@ from PyQt5.QtCore import QSettings, pyqtSlot
 from PyQt5.QtSql import QSqlDatabase, QSqlQuery
 from mainWindow import UiMainWindow
 from wss import WSSDGTX, Worker, Senderq, InTimer, Analizator, WSSCore
+from loginWindow import LoginWindow
 import hashlib
 from Crypto.Cipher import AES # pip install pycryptodome
 import math
@@ -89,9 +90,11 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     timerazban = 0
 
-    flDGTXConnect = False           #   флаг нормального соединения с сайтом
-    flCoreConnect = False        # флаг нормального соединения с сайтом
-    flAuth = False              #   флаг авторизации на сайте (введения правильного API KEY)
+    flDGTXConnect = False       #   флаг соединения с сайтом DGTX
+    flCoreConnect = False       #   флаг соединения с ядром
+    flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
+    flCoreAuth = False          #   флаг авторизации в ядре
+
     flAutoLiq = False           #   флаг разрешенного авторазмещения ордеров (нажатия кнопки СТАРТ)
 
     def __init__(self):
@@ -146,6 +149,26 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def closeEvent(self, *args, **kwargs):
         pass
+
+    def userlogined(self, psw):
+        if self.flCoreConnect and not self.flCoreAuth:
+            self.wsscore.send_registration(psw)
+
+    @pyqtSlot()
+    def buttonLogin_clicked(self):
+        if self.flCoreConnect and not self.flCoreAuth:
+            rw = LoginWindow()
+            rw.userlogined.connect(lambda: self.userlogined(rw.psw))
+            rw.setupUi()
+            rw.exec_()
+
+    def change_auth_status(self):
+        if self.flCoreAuth:
+            self.pb_enter.setText('вход выполнен: ' + self.user)
+            self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
+        else:
+            self.pb_enter.setText('вход не выполнен')
+            self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
 
     def returnid(self):
         id = str(round(time.time()) * 1000000 + random.randrange(1000000))
@@ -291,15 +314,11 @@ class MainWindow(QMainWindow, UiMainWindow):
     # ==== приватные сообщения
     def message_tradingStatus(self, data):
         status = data.get('available')
-        self.startbutton.setEnabled(status)
         if status:
-            self.buttonAK.setStyleSheet("color:rgb(32, 192, 32);font: bold 11px; border: none;")
-            self.buttonAK.setText('верный api key\nнажмите здесь для изменения')
-            self.flAuth = True
-            self.dxthread.send_privat('getTraderStatus', symbol=self.symbol)
+            self.wsscore.authpilot('ok')
         else:
-            self.buttonAK.setStyleSheet("color:rgb(192, 32, 32);font: bold 11px; border: none;")
-            self.buttonAK.setText('не верный api key\nнажмите здесь для изменения')
+            self.wsscore.authpilot('error')
+
 
     def message_orderStatus(self, data):
         self.lock.acquire()

@@ -9,13 +9,13 @@ class WSSCore(Thread):
     def __init__(self, pc):
         super(WSSCore, self).__init__()
         self.pc = pc
+        self.pilot = False
         self.flClosing = False
 
     def run(self) -> None:
         def on_open(wsapp):
             self.pc.flCoreConnect = True
             self.pc.l_core.setText('Соединение с ядром установлено')
-            self.registration()
 
         def on_close(wsapp, close_status_code, close_msg):
             pass
@@ -23,16 +23,23 @@ class WSSCore(Thread):
         def on_error(wsapp, error):
             self.pc.flCoreConnect = False
             self.pc.l_core.setText('Ошибка соединения с ядром')
-            time.sleep(1)
 
         def on_message(wssapp, message):
             mes = json.loads(message)
             id = mes.get('id')
             message_type = mes.get('message_type')
             data = mes.get('data')
-            if message_type == 'cb':
+            if message_type == 'registration':
+                status = data.get('status')
+                if status == 'ok':
+                    self.pc.flCoreAuth = True
+                else:
+                    self.pc.flCoreAuth = False
+                self.pc.change_auth_status()
+            elif message_type == 'cb':
                 command = data.get('command')
-                if command == 'authpilot':
+                if command == 'authpilot' and not self.pilot:
+                    self.pilot = data.get('pilot')
                     ak = data.get('ak')
                     self.pc.dxthread.send_privat('auth', type='token', value=ak)
 
@@ -47,8 +54,19 @@ class WSSCore(Thread):
             finally:
                 time.sleep(1)
 
-    def registration(self):
-        str = {'id': 10, 'message_type': 'registration', 'data': {'typereg': 'rocket', 'version': self.pc.version}}
+    def authpilot(self, status):
+        str = {'command': 'authpilot', 'status': status, 'pilot':self.pilot}
+        self.send_bc(str)
+        if status == 'error':
+            self.pilot = False
+
+    def send_registration(self, psw):
+        str = {'id': 10, 'message_type': 'registration', 'data': {'typereg': 'rocket', 'psw':psw, 'version': self.pc.version}}
+        str = json.dumps(str)
+        self.wsapp.send(str)
+
+    def send_bc(self, data):
+        str = {'id':10, 'message_type':'bc', 'data':data}
         str = json.dumps(str)
         self.wsapp.send(str)
 
