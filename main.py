@@ -10,7 +10,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSettings, pyqtSlot
 from PyQt5.QtSql import QSqlDatabase, QSqlQuery
 from mainWindow import UiMainWindow
-from wss import WSSDGTX, Worker, Senderq, InTimer, Analizator, WSSCore
+from wss import WSSDGTX, Worker, Senderq, InTimer, WSSCore
 from loginWindow import LoginWindow
 import hashlib
 from Crypto.Cipher import AES # pip install pycryptodome
@@ -52,8 +52,7 @@ class Contract():
         self.status = kwargs['status']
 
 class MainWindow(QMainWindow, UiMainWindow):
-    version = '1.0.3'
-    settings = QSettings("./config.ini", QSettings.IniFormat)   # файл настроек
+    version = '1.0.4'
     lock = Lock()
 
     user = ''
@@ -79,21 +78,42 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     listOrders = []             #   список активных ордеров
     listContracts = []          #   список открытых контрактов
-    listTick = np.zeros((NUMTICKS, 3), dtype=float)          #   массив последних тиков
-    tickCounter = 0             #   счетчик тиков
-    market_volatility = 0       #   текущая волатильность
+
     contractmined = 0           #   добыто на контрактах
     contractcount = 0           #   количество сорванных контрактов
     pnl = 0                     #   текущий PnL
     fundingcount = 0            #   выплат за текущую сессию
     fundingmined = 0            #   добыто за текущую сессию
 
-    timerazban = 0
 
     flDGTXConnect = False       #   флаг соединения с сайтом DGTX
     flCoreConnect = False       #   флаг соединения с ядром
     flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
     flCoreAuth = False          #   флаг авторизации в ядре
+
+    parameters = {'symbol':'',
+                  'numconts':0,
+                  'dist1':0,
+                  'dist2':0,
+                  'dist3':0,
+                  'dist4':0,
+                  'dist5':0,
+                  'dist1_k':0,
+                  'dist2_k':0,
+                  'dist3_k':0,
+                  'dist4_k':0,
+                  'dist5_k':0,
+                  'delayaftermined':0,
+                  'bandelay':0,
+                  'flRace':False}
+
+    info = {'contractmined':0,
+            'contractcount':0,
+            'fundingmined':0,
+            'fundingcount':0,
+            'racetime':0,
+            'maxBalance':0,
+            'balance':0}
 
     flAutoLiq = False           #   флаг разрешенного авторазмещения ордеров (нажатия кнопки СТАРТ)
 
@@ -142,10 +162,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         # self.intimer = InTimer(self)
         # self.intimer.daemon = True
         # self.intimer.start()
-        #
-        # self.analizator = Analizator(self.midvol)
-        # self.analizator.daemon = True
-        # self.analizator.start()
+
 
     def closeEvent(self, *args, **kwargs):
         pass
@@ -169,6 +186,15 @@ class MainWindow(QMainWindow, UiMainWindow):
         else:
             self.pb_enter.setText('вход не выполнен')
             self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
+
+    def setparameters(self, parameters):
+        self.lock.acquire()
+        for k in self.parameters.keys():
+            x = parameters.get(k)
+            if x:
+                self.parameters[k] = x
+        self.lock.release()
+        self.wsscore.race_info(self.parameters, self.info)
 
     def returnid(self):
         id = str(round(time.time()) * 1000000 + random.randrange(1000000))
@@ -316,6 +342,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         status = data.get('available')
         if status:
             self.wsscore.authpilot('ok')
+            self.wsscore.race_info(self.parameters, self.info)
         else:
             self.wsscore.authpilot('error')
 

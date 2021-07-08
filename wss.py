@@ -42,6 +42,9 @@ class WSSCore(Thread):
                     self.pilot = data.get('pilot')
                     ak = data.get('ak')
                     self.pc.dxthread.send_privat('auth', type='token', value=ak)
+                elif command == 'cb_setparameters':
+                    parameters = data.get('parameters')
+                    self.pc.setparameters(parameters)
 
         while not self.flClosing:
             try:
@@ -59,6 +62,10 @@ class WSSCore(Thread):
         self.send_bc(str)
         if status == 'error':
             self.pilot = False
+
+    def race_info(self, parameters, info):
+        str = {'command':'race_info', 'pilot':self.pilot, 'parameters':parameters, 'info':info}
+        self.send_bc(str)
 
     def send_registration(self, psw):
         str = {'id': 10, 'message_type': 'registration', 'data': {'typereg': 'rocket', 'psw':psw, 'version': self.pc.version}}
@@ -183,16 +190,3 @@ class InTimer(Thread):
                 self.pnlTime = time.time() - self.pnlStartTime
             time.sleep(self.delay)
 
-
-class Analizator(Thread):
-
-    def __init__(self, f):
-        super(Analizator, self).__init__()
-        self.delay = 1
-        self.flClosing = False
-        self.f = f
-
-    def run(self) -> None:
-        while not self.flClosing:
-            self.f()
-            time.sleep(self.delay)
