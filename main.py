@@ -115,8 +115,6 @@ class MainWindow(QMainWindow, UiMainWindow):
             'maxBalance':0,
             'balance':0}
 
-    flAutoLiq = False           #   флаг разрешенного авторазмещения ордеров (нажатия кнопки СТАРТ)
-
     def __init__(self):
 
         super().__init__()
@@ -158,10 +156,10 @@ class MainWindow(QMainWindow, UiMainWindow):
             self.listp.append(p)
             p.daemon = True
             p.start()
-        #
-        # self.intimer = InTimer(self)
-        # self.intimer.daemon = True
-        # self.intimer.start()
+
+        self.intimer = InTimer(self)
+        self.intimer.daemon = True
+        self.intimer.start()
 
 
     def closeEvent(self, *args, **kwargs):
@@ -195,11 +193,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                 self.parameters[k] = x
         self.lock.release()
         self.wsscore.race_info(self.parameters, self.info)
-
-    def returnid(self):
-        id = str(round(time.time()) * 1000000 + random.randrange(1000000))
-        return id
-
+#   ====================================================================================================================
     def fill_data(self, data):
         self.traderBalance = data['traderBalance']
         self.maxBalance = max(self.maxBalance, self.traderBalance)
