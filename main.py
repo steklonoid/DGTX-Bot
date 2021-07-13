@@ -5,15 +5,12 @@ import time
 import queue
 import logging
 
-from PyQt5.QtWidgets import QMainWindow, QApplication, QMessageBox
+from PyQt5.QtWidgets import QMainWindow, QApplication
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QSettings, pyqtSlot
-from PyQt5.QtSql import QSqlDatabase, QSqlQuery
+from PyQt5.QtCore import pyqtSlot
 from mainWindow import UiMainWindow
 from wss import WSSDGTX, Worker, Senderq, InTimer, WSSCore
 from loginWindow import LoginWindow
-import hashlib
-from Crypto.Cipher import AES # pip install pycryptodome
 import math
 import numpy as np
 from threading import Lock
@@ -28,7 +25,6 @@ ACTIVE = 1
 CLOSING = 2
 
 MAXORDERDIST = 5
-NUMTICKS = 128
 
 ex = {'BTCUSD-PERP':{'TICK_SIZE':5, 'TICK_VALUE':0.1},'ETHUSD-PERP':{'TICK_SIZE':1, 'TICK_VALUE':1}}
 
@@ -54,42 +50,29 @@ class Contract():
 class MainWindow(QMainWindow, UiMainWindow):
     version = '1.0.4'
     lock = Lock()
-
-    user = ''
-    psw = ''
-
-    #   получаемые данные
     leverage = 0                #   текущее плечо
-    traderBalance = 0           #   текущий баланс
-    traderBalance_usd = 0       #   текущий баланс в usd
-    contractValue = 0           #   величина контракта
-    dgtxUsdRate = 0             #   курс DGTX / USD
-    current_cellprice = 0       #   текущая тик-цена
-    last_cellprice = 0          #   прошлая тик-цена
-    current_maxbid = 0          #   текущая нижняя граница стакана цен
-    last_maxbid = 0             #   прошлая нижняя граница стакана цен
-    current_minask = 0          #   текущая верхняя граница стакана цен
-    last_minask = 0             #   прошлая верхняя граница стакана цен
-
-    spotPx = 0                  #   текущая spot-цена
-    lastSpotPx = 0              #   прошлая spot-цена
-    exDist = 0                  #   TICK_SIZE для текущей валюты
-    maxBalance = 0              #   максимальный баланс за текущую сессию
-
-    listOrders = []             #   список активных ордеров
-    listContracts = []          #   список открытых контрактов
-
-    contractmined = 0           #   добыто на контрактах
-    contractcount = 0           #   количество сорванных контрактов
-    pnl = 0                     #   текущий PnL
-    fundingcount = 0            #   выплат за текущую сессию
-    fundingmined = 0            #   добыто за текущую сессию
-
-
+    #   -----------------------------------------------------------
     flDGTXConnect = False       #   флаг соединения с сайтом DGTX
     flCoreConnect = False       #   флаг соединения с ядром
     flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
     flCoreAuth = False          #   флаг авторизации в ядре
+
+    pilot = False
+    lastsymbol = None
+
+    listOrders = []  # список активных ордеров
+    listContracts = []  # список открытых контрактов
+
+    maxBalance = 0  # максимальный баланс за текущую сессию
+    current_cellprice = 0  # текущая тик-цена
+    last_cellprice = 0  # прошлая тик-цена
+    current_maxbid = 0  # текущая нижняя граница стакана цен
+    last_maxbid = 0  # прошлая нижняя граница стакана цен
+    current_minask = 0  # текущая верхняя граница стакана цен
+    last_minask = 0  # прошлая верхняя граница стакана цен
+    spotPx = 0  # текущая spot-цена
+    exDist = 0  # TICK_SIZE для текущей валюты
+    pnl = 0  # текущий PnL
 
     parameters = {'symbol':'',
                   'numconts':0,
@@ -106,6 +89,10 @@ class MainWindow(QMainWindow, UiMainWindow):
                   'delayaftermined':0,
                   'bandelay':0,
                   'flRace':False}
+
+    market_situation = {'avarage_volatility_128':0
+
+    }
 
     info = {'contractmined':0,
             'contractcount':0,
@@ -124,8 +111,6 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-        self.sendq = queue.Queue()
-
         self.wsscore = WSSCore(self)
         self.wsscore.daemon = True
         self.wsscore.start()
@@ -134,22 +119,20 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.dxthread.daemon = True
         self.dxthread.start()
 
+        self.sendq = queue.Queue()
         self.senderq = Senderq(self.sendq, self.dxthread)
         self.senderq.daemon = True
         self.senderq.start()
 
-        self.listf = {'orderbook_1':{'q':queue.LifoQueue(), 'f':self.message_orderbook_1},
+        self.listf = {'orderbook_5':{'q':queue.LifoQueue(), 'f':self.message_orderbook_5},
                       'index':{'q':queue.LifoQueue(), 'f':self.message_index},
-                      'ticker':{'q':queue.LifoQueue(), 'f':self.message_ticker},
                       'tradingStatus': {'q': queue.Queue(), 'f': self.message_tradingStatus},
                       'orderStatus': {'q': queue.Queue(), 'f': self.message_orderStatus},
                       'orderFilled': {'q': queue.Queue(), 'f': self.message_orderFilled},
                       'orderCancelled': {'q': queue.Queue(), 'f': self.message_orderCancelled},
-                      'contractClosed': {'q': queue.Queue(), 'f': self.message_contractClosed},
                       'traderStatus': {'q': queue.Queue(), 'f': self.message_traderStatus},
                       'leverage': {'q': queue.Queue(), 'f': self.message_leverage},
-                      'funding': {'q': queue.Queue(), 'f': self.message_funding},
-                      'position': {'q': queue.Queue(), 'f': self.message_position}}
+                      'funding': {'q': queue.Queue(), 'f': self.message_funding}}
         self.listp = []
         for ch in self.listf.keys():
             p = Worker(self.listf[ch]['q'], self.listf[ch]['f'])
@@ -160,7 +143,6 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.intimer = InTimer(self)
         self.intimer.daemon = True
         self.intimer.start()
-
 
     def closeEvent(self, *args, **kwargs):
         pass
@@ -185,33 +167,40 @@ class MainWindow(QMainWindow, UiMainWindow):
             self.pb_enter.setText('вход не выполнен')
             self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
 
+    def authpilot(self, pilot, ak):
+        self.pilot = pilot
+        self.dxthread.send_privat('auth', type='token', value=ak)
+
+    def setsynbol(self, symbol):
+        self.lock.acquire()
+        self.parameters['symbol'] = symbol
+        self.exDist = ex[symbol]['TICK_SIZE']
+        if symbol != self.lastsymbol:
+            self.dxthread.changeEx(symbol, self.lastsymbol)
+            self.lastsymbol = symbol
+
     def setparameters(self, parameters):
         self.lock.acquire()
         for k in self.parameters.keys():
             x = parameters.get(k)
             if x:
                 self.parameters[k] = x
+                if k == 'symbol':
+                    self.setsynbol(x)
         self.lock.release()
         self.wsscore.race_info(self.parameters, self.info)
 #   ====================================================================================================================
     def fill_data(self, data):
-        self.traderBalance = data['traderBalance']
-        self.maxBalance = max(self.maxBalance, self.traderBalance)
-        self.traderBalance_usd = data['traderBalance'] * self.dgtxUsdRate
-        self.leverage = data['leverage']
+        balance = data['traderBalance']
+        self.info['balance'] = balance
+        self.info['maxBalance'] = max(self.info['maxBalance'], balance)
 
     def changemarketsituation(self):
 
         def checkLimits():
-            if not self.flAutoLiq:
-                return False
             if time.time() <= self.timerazban:
                 return False
-            if self.tickCounter < NUMTICKS:
-                return False
-            if self.intimer.pnlTime <= self.l_delayaftermined:
-                return False
-            if self.traderBalance <= self.l_losslimit_b:
+            if self.intimer.pnlTime <= self.parameters['l_delayaftermined']:
                 return False
             return True
 
@@ -228,19 +217,20 @@ class MainWindow(QMainWindow, UiMainWindow):
                 bonddist = min(bonddist, MAXORDERDIST)
 
                 bondmod = 0
-                if bonddist == 1  and self.market_volatility <= self.l_dist1_k:
-                    bondmod = self.l_dist1
-                elif bonddist == 2  and self.market_volatility <= self.l_dist2_k:
-                    bondmod = self.l_dist2
-                elif bonddist == 3  and self.market_volatility <= self.l_dist3_k:
-                    bondmod = self.l_dist3
-                elif bonddist == 4  and self.market_volatility <= self.l_dist4_k:
-                    bondmod = self.l_dist4
-                elif bonddist == 5  and self.market_volatility <= self.l_dist5_k:
-                    bondmod = self.l_dist5
+                av128 = self.market_situation['avarage_volatility_128']
+                if bonddist == 1  and  av128 <= self.parameters['dist1_k']:
+                    bondmod = self.parameters['dist1']
+                elif bonddist == 2  and av128 <= self.parameters['dist2_k']:
+                    bondmod = self.parameters['dist2']
+                elif bonddist == 3  and av128 <= self.parameters['dist3_k']:
+                    bondmod = self.parameters['dist3']
+                elif bonddist == 4  and av128 <= self.parameters['dist4_k']:
+                    bondmod = self.parameters['dist4']
+                elif bonddist == 5  and av128 <= self.parameters['dist5_k']:
+                    bondmod = self.parameters['dist5']
 
                 if bondmod != 0:
-                    distlist[price] = self.l_numconts * bondmod
+                    distlist[price] = self.parameters['numconts'] * bondmod
 
         # завершаем ордеры, которые находятся не в списке разрешенных дистанций
         for order in self.listOrders:
@@ -278,68 +268,41 @@ class MainWindow(QMainWindow, UiMainWindow):
                         paidPx=0,
                         type=AUTO,
                         status=OPENING))
-    # ========== обработчик респонсов ============
-    def message_response(self, id, status):
-        pass
+
     # ========== обработчики сообщений ===========
     # ==== публичные сообщения
-    def message_orderbook_1(self, data):
-        self.lock.acquire()
-        self.current_maxbid = data.get('bids')[0][0]
-        self.current_minask = data.get('asks')[0][0]
-        if ((self.current_maxbid != self.last_maxbid) or (self.current_minask != self.last_minask)) and self.flConnect:
-            self.changemarketsituation()
-        self.last_maxbid = self.current_maxbid
-        self.last_minask = self.current_minask
-        self.lock.release()
-
-    def message_kline(self, data):
-        pass
-
-    def message_trades(self, data):
-        pass
-
-    def message_liquidations(self, data):
-        pass
-
-    def message_ticker(self, data):
-        self.dgtxUsdRate = data['dgtxUsdRate']
-        self.contractValue = data['contractValue']
-
-    def message_fundingInfo(self, data):
-        pass
+    def message_orderbook_5(self, data):
+        if self.parameters['flRace'] and self.flDGTXConnect:
+            self.lock.acquire()
+            self.current_maxbid = data.get('bids')[0][0]
+            self.current_minask = data.get('asks')[0][0]
+            if (self.current_maxbid != self.last_maxbid) or (self.current_minask != self.last_minask):
+                self.changemarketsituation()
+            self.last_maxbid = self.current_maxbid
+            self.last_minask = self.current_minask
+            self.lock.release()
 
     def message_index(self, data):
-        self.lock.acquire()
-        self.spotPx = data['spotPx']
-
-        if self.tickCounter < NUMTICKS:
-            if self.tickCounter > 1:
-                self.listTick[self.tickCounter] = [data['ts'], self.spotPx, np.absolute(self.spotPx - self.listTick[self.tickCounter - 1][1])]
-        else:
-            res = np.empty_like(self.listTick)
-            res[:-1] = self.listTick[1:]
-            res[-1] = [data['ts'], self.spotPx, np.absolute(self.spotPx - res[-2][1])]
-            self.listTick = res
-
-        self.tickCounter += 1
-        if self.flConnect:
+        if self.parameters['flRace'] and self.flDGTXConnect:
+            self.lock.acquire()
+            self.spotPx = data['spotPx']
             self.current_cellprice = math.floor(self.spotPx / self.exDist) * self.exDist
             if self.current_cellprice != self.last_cellprice:
                 self.changemarketsituation()
             self.last_cellprice = self.current_cellprice
-
-        self.lock.release()
+            self.lock.release()
 
     # ==== приватные сообщения
     def message_tradingStatus(self, data):
         status = data.get('available')
         if status:
+            self.flDGTXAuth = True
             self.wsscore.authpilot('ok')
-            self.wsscore.race_info(self.parameters, self.info)
+            self.wsscore.race_info(self.pilot, self.parameters, self.info)
         else:
+            self.flDGTXAuth = False
+            self.pilot = False
             self.wsscore.authpilot('error')
-
 
     def message_orderStatus(self, data):
         self.lock.acquire()
@@ -368,15 +331,15 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def message_orderFilled(self, data):
         self.lock.acquire()
-        self.contractmined += (data['pnl'] - self.pnl)
+        self.info['contractmined'] += (data['pnl'] - self.pnl)
         self.pnl = data['pnl']
 
         listfilledorders = [x for x in data['contracts'] if x['qty'] != 0]
         if len(listfilledorders) != 0:
-            self.timerazban = time.time() + self.l_bandelay
+            self.timerazban = time.time() + self.parameters['bandelay']
             self.dxthread.send_privat('cancelAllOrders', symbol=self.symbol)
             self.listOrders.clear()
-            self.contractcount += len(listfilledorders)
+            self.info['contractcount'] += len(listfilledorders)
 
         for cont in listfilledorders:
             self.dxthread.send_privat('closeContract', symbol=self.symbol, contractId=cont['contractId'], ordType='MARKET')
@@ -395,12 +358,6 @@ class MainWindow(QMainWindow, UiMainWindow):
                     self.listOrders.remove(order)
         self.lock.release()
 
-    def message_condOrderStatus(self, data):
-        pass
-
-    def message_contractClosed(self, data):
-        pass
-
     def message_traderStatus(self, data):
         self.lock.acquire()
         self.fill_data(data)
@@ -414,8 +371,8 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def message_funding(self, data):
         self.lock.acquire()
-        self.fundingcount += 1
-        self.fundingmined += data['payout']
+        self.info['fundingcount'] += 1
+        self.info['fundingmined'] += data['payout']
         self.pnl = data['pnl']
 
         self.intimer.pnlStartTime = time.time()
@@ -423,9 +380,6 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.dxthread.send_privat('getTraderStatus', symbol=self.symbol)
         self.listOrders.clear()
         self.lock.release()
-
-    def message_position(self, data):
-        pass
 
 app = QApplication([])
 win = MainWindow()

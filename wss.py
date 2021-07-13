@@ -9,7 +9,6 @@ class WSSCore(Thread):
     def __init__(self, pc):
         super(WSSCore, self).__init__()
         self.pc = pc
-        self.pilot = False
         self.flClosing = False
 
     def run(self) -> None:
@@ -25,6 +24,7 @@ class WSSCore(Thread):
             self.pc.l_core.setText('Ошибка соединения с ядром')
 
         def on_message(wssapp, message):
+            print(message)
             mes = json.loads(message)
             id = mes.get('id')
             message_type = mes.get('message_type')
@@ -39,9 +39,12 @@ class WSSCore(Thread):
             elif message_type == 'cb':
                 command = data.get('command')
                 if command == 'authpilot' and not self.pilot:
-                    self.pilot = data.get('pilot')
-                    ak = data.get('ak')
-                    self.pc.dxthread.send_privat('auth', type='token', value=ak)
+                    if self.pc.flDGTXConnect and not self.pc.flDGTXAuth:
+                        pilot = data.get('pilot')
+                        ak = data.get('ak')
+                        self.pc.authpilot(pilot, ak)
+                    else:
+                        self.authpilot('error')
                 elif command == 'cb_setparameters':
                     parameters = data.get('parameters')
                     self.pc.setparameters(parameters)
@@ -57,14 +60,12 @@ class WSSCore(Thread):
             finally:
                 time.sleep(1)
 
-    def authpilot(self, status):
-        str = {'command': 'authpilot', 'status': status, 'pilot':self.pilot}
+    def authpilot(self, status, pilot):
+        str = {'command': 'authpilot', 'status': status, 'pilot':pilot}
         self.send_bc(str)
-        if status == 'error':
-            self.pilot = False
 
-    def race_info(self, parameters, info):
-        str = {'command':'race_info', 'pilot':self.pilot, 'parameters':parameters, 'info':info}
+    def race_info(self, pilot, parameters, info):
+        str = {'command':'race_info', 'pilot':pilot, 'parameters':parameters, 'info':info}
         self.send_bc(str)
 
     def send_registration(self, psw):
@@ -92,7 +93,7 @@ class WSSDGTX(Thread):
             logging.info('open')
             self.pc.flDGTXConnect = True
             self.pc.l_DGTX.setText('Соединение с DGTX установлено')
-            if self.pc.flAuth:
+            if self.pc.flDGTXAuth:
                 self.pc.authser()
 
         def on_close(wsapp, close_status_code, close_msg):
@@ -128,8 +129,10 @@ class WSSDGTX(Thread):
             finally:
                 time.sleep(1)
 
-    def changeEx(self, name):
-        self.send_public('subscribe', name + '@index', name + '@ticker', name + '@orderbook_1')
+    def changeEx(self, name, lastname):
+        if lastname:
+            self.send_public('unsubscribe', lastname + '@index', lastname + '@orderbook_5')
+        self.send_public('subscribe', name + '@index', name + '@orderbook_5')
 
     def send_public(self, method, *params):
         pd = {'id':self.methods.get(method), 'method':method}
