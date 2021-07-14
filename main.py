@@ -161,7 +161,7 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def change_auth_status(self):
         if self.flCoreAuth:
-            self.pb_enter.setText('вход выполнен: ' + self.user)
+            self.pb_enter.setText('вход выполнен: ')
             self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
         else:
             self.pb_enter.setText('вход не выполнен')
