@@ -1,18 +1,14 @@
-import random
 import sys
-import os
 import time
 import queue
 import logging
 
 from PyQt5.QtWidgets import QMainWindow, QApplication
-from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSlot
 from mainWindow import UiMainWindow
-from wss import WSSDGTX, Worker, Senderq, InTimer, WSSCore
+from wss import WSSDGTX, Worker, Senderq, InTimer, Timer, WSSCore
 from loginWindow import LoginWindow
 import math
-import numpy as np
 from threading import Lock
 
 # = order type
@@ -90,8 +86,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                   'bandelay':0,
                   'flRace':False}
 
-    market_situation = {'avarage_volatility_128':0
-
+    marketinfo = {'avarage_volatility_128':0
     }
 
     info = {'contractmined':0,
@@ -144,6 +139,10 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.intimer.daemon = True
         self.intimer.start()
 
+        self.timer = Timer(self.sendinfo, 1)
+        self.timer.daemon = True
+        self.timer.start()
+
     def closeEvent(self, *args, **kwargs):
         pass
 
@@ -189,6 +188,15 @@ class MainWindow(QMainWindow, UiMainWindow):
                     self.setsynbol(x)
         self.lock.release()
         self.wsscore.race_info(self.parameters, self.info)
+
+    def setmarketinfo(self, marketinfo):
+        self.lock.acquire()
+        self.marketinfo = marketinfo
+        self.lock.release()
+
+    def sendinfo(self):
+        if self.flDGTXAuth:
+            self.wsscore.race_info(self.pilot, self.parameters, self.info)
 #   ====================================================================================================================
     def fill_data(self, data):
         balance = data['traderBalance']

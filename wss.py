@@ -38,7 +38,7 @@ class WSSCore(Thread):
                 self.pc.change_auth_status()
             elif message_type == 'cb':
                 command = data.get('command')
-                if command == 'authpilot' and not self.pilot:
+                if command == 'cb_authpilot' and not self.pilot:
                     if self.pc.flDGTXConnect and not self.pc.flDGTXAuth:
                         pilot = data.get('pilot')
                         ak = data.get('ak')
@@ -48,6 +48,9 @@ class WSSCore(Thread):
                 elif command == 'cb_setparameters':
                     parameters = data.get('parameters')
                     self.pc.setparameters(parameters)
+                elif command == 'cb_marketinfo':
+                    marketinfo = data.get('marketinfo')
+                    self.pc.setmarketinfo(marketinfo)
 
         while not self.flClosing:
             try:
@@ -61,11 +64,11 @@ class WSSCore(Thread):
                 time.sleep(1)
 
     def authpilot(self, status, pilot):
-        str = {'command': 'authpilot', 'status': status, 'pilot':pilot}
+        str = {'command': 'bc_authpilot', 'status': status, 'pilot':pilot}
         self.send_bc(str)
 
     def race_info(self, pilot, parameters, info):
-        str = {'command':'race_info', 'pilot':pilot, 'parameters':parameters, 'info':info}
+        str = {'command':'bc_raceinfo', 'pilot':pilot, 'parameters':parameters, 'info':info}
         self.send_bc(str)
 
     def send_registration(self, psw):
@@ -184,12 +187,27 @@ class InTimer(Thread):
         self.pnlStartTime = 0
         self.pnlTime = 0
         self.workingStartTime = 0
+        self.workingTime = 0
         self.flWorking = False
         self.flClosing = False
 
     def run(self) -> None:
         while not self.flClosing:
             if self.flWorking:
-                self.pnlTime = time.time() - self.pnlStartTime
+                t = time.time()
+                self.pnlTime = t - self.pnlStartTime
+                self.workingTime = t - self.workingStartTime
+            time.sleep(self.delay)
+
+class Timer(Thread):
+
+    def __init__(self, f, delay):
+        super(Timer, self).__init__()
+        self.f = f
+        self.delay = delay
+
+    def run(self) -> None:
+        while True:
+            self.f()
             time.sleep(self.delay)
 
