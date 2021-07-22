@@ -26,7 +26,6 @@ class WSSCore(Thread):
         def on_message(wssapp, message):
             print(message)
             mes = json.loads(message)
-            id = mes.get('id')
             message_type = mes.get('message_type')
             data = mes.get('data')
             if message_type == 'registration':
@@ -72,12 +71,12 @@ class WSSCore(Thread):
         self.send_bc(str)
 
     def send_registration(self, psw):
-        str = {'id': 10, 'message_type': 'registration', 'data': {'typereg': 'rocket', 'psw':psw, 'version': self.pc.version}}
+        str = {'message_type': 'registration', 'data': {'typereg': 'rocket', 'psw':psw, 'version': self.pc.version}}
         str = json.dumps(str)
         self.wsapp.send(str)
 
     def send_bc(self, data):
-        str = {'id':10, 'message_type':'bc', 'data':data}
+        str = {'message_type':'bc', 'data':data}
         str = json.dumps(str)
         self.wsapp.send(str)
 

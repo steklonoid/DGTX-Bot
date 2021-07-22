@@ -44,7 +44,7 @@ class Contract():
         self.status = kwargs['status']
 
 class MainWindow(QMainWindow, UiMainWindow):
-    version = '1.0.4'
+    version = '1.0.5'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
