@@ -86,8 +86,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                   'bandelay':0,
                   'flRace':False}
 
-    marketinfo = {'avarage_volatility_128':0
-    }
+    marketinfo = {'BTCUSD-PERP':{'avarage_volatility_128':0}, 'ETHUSD-PERP':{'avarage_volatility_128':0}}
 
     info = {'contractmined':0,
             'contractcount':0,
@@ -191,7 +190,7 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def setmarketinfo(self, marketinfo):
         self.lock.acquire()
-        self.marketinfo = marketinfo
+        self.marketinfo[marketinfo['symbol']]['avarage_volatility_128'] = marketinfo['market_volatility_128']
         self.lock.release()
 
     def sendinfo(self):
@@ -225,7 +224,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                 bonddist = min(bonddist, MAXORDERDIST)
 
                 bondmod = 0
-                av128 = self.market_situation['avarage_volatility_128']
+                av128 = self.marketinfo[self.parameters['symbol']]['avarage_volatility_128']
                 if bonddist == 1  and  av128 <= self.parameters['dist1_k']:
                     bondmod = self.parameters['dist1']
                 elif bonddist == 2  and av128 <= self.parameters['dist2_k']:
@@ -305,7 +304,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         status = data.get('available')
         if status:
             self.flDGTXAuth = True
-            self.wsscore.authpilot('ok')
+            self.wsscore.authpilot('ok', self.pilot)
             self.wsscore.race_info(self.pilot, self.parameters, self.info)
         else:
             self.flDGTXAuth = False

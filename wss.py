@@ -24,7 +24,7 @@ class WSSCore(Thread):
             self.pc.l_core.setText('Ошибка соединения с ядром')
 
         def on_message(wssapp, message):
-            print(message)
+            # print(message)
             mes = json.loads(message)
             message_type = mes.get('message_type')
             data = mes.get('data')
@@ -37,7 +37,8 @@ class WSSCore(Thread):
                 self.pc.change_auth_status()
             elif message_type == 'cb':
                 command = data.get('command')
-                if command == 'cb_authpilot' and not self.pilot:
+                if command == 'cb_authpilot': #and not self.pilot:
+                    print(mes)
                     if self.pc.flDGTXConnect and not self.pc.flDGTXAuth:
                         pilot = data.get('pilot')
                         ak = data.get('ak')
@@ -48,7 +49,7 @@ class WSSCore(Thread):
                     parameters = data.get('parameters')
                     self.pc.setparameters(parameters)
                 elif command == 'cb_marketinfo':
-                    marketinfo = data.get('marketinfo')
+                    marketinfo = data.get('info')
                     self.pc.setmarketinfo(marketinfo)
 
         while not self.flClosing:
