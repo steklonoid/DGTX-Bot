@@ -147,7 +147,7 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def userlogined(self, psw):
         if self.flCoreConnect and not self.flCoreAuth:
-            self.wsscore.send_registration(psw)
+            self.wsscore.bc_registration(psw)
 
     @pyqtSlot()
     def buttonLogin_clicked(self):
@@ -186,16 +186,16 @@ class MainWindow(QMainWindow, UiMainWindow):
                 if k == 'symbol':
                     self.setsynbol(x)
         self.lock.release()
-        self.wsscore.race_info(self.parameters, self.info)
+        self.wsscore.bc_raceinfo(self.parameters, self.info, )
 
     def setmarketinfo(self, marketinfo):
-        self.lock.acquire()
+        # self.lock.acquire()
         self.marketinfo[marketinfo['symbol']]['avarage_volatility_128'] = marketinfo['market_volatility_128']
-        self.lock.release()
+        # self.lock.release()
 
     def sendinfo(self):
         if self.flDGTXAuth:
-            self.wsscore.race_info(self.pilot, self.parameters, self.info)
+            self.wsscore.bc_raceinfo(self.pilot, self.parameters, self.info)
 #   ====================================================================================================================
     def fill_data(self, data):
         balance = data['traderBalance']
@@ -304,12 +304,12 @@ class MainWindow(QMainWindow, UiMainWindow):
         status = data.get('available')
         if status:
             self.flDGTXAuth = True
-            self.wsscore.authpilot('ok', self.pilot)
-            self.wsscore.race_info(self.pilot, self.parameters, self.info)
+            self.wsscore.bc_authpilot('ok', self.pilot)
+            self.wsscore.bc_raceinfo(self.pilot, self.parameters, self.info)
         else:
             self.flDGTXAuth = False
             self.pilot = False
-            self.wsscore.authpilot('error')
+            self.wsscore.bc_authpilot('error', )
 
     def message_orderStatus(self, data):
         self.lock.acquire()

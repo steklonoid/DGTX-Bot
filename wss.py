@@ -28,23 +28,22 @@ class WSSCore(Thread):
             mes = json.loads(message)
             message_type = mes.get('message_type')
             data = mes.get('data')
-            if message_type == 'registration':
-                status = data.get('status')
-                if status == 'ok':
-                    self.pc.flCoreAuth = True
-                else:
-                    self.pc.flCoreAuth = False
-                self.pc.change_auth_status()
-            elif message_type == 'cb':
+            if message_type == 'cb':
                 command = data.get('command')
-                if command == 'cb_authpilot': #and not self.pilot:
-                    print(mes)
+                if command == 'cb_registration':
+                    status = data.get('status')
+                    if status == 'ok':
+                        self.pc.flCoreAuth = True
+                    else:
+                        self.pc.flCoreAuth = False
+                    self.pc.change_auth_status()
+                elif command == 'cb_authpilot':
                     if self.pc.flDGTXConnect and not self.pc.flDGTXAuth:
                         pilot = data.get('pilot')
                         ak = data.get('ak')
-                        self.pc.authpilot(pilot, ak)
+                        self.pc.bc_authpilot(pilot, ak)
                     else:
-                        self.authpilot('error')
+                        self.bc_authpilot('error', )
                 elif command == 'cb_setparameters':
                     parameters = data.get('parameters')
                     self.pc.setparameters(parameters)
@@ -63,18 +62,17 @@ class WSSCore(Thread):
             finally:
                 time.sleep(1)
 
-    def authpilot(self, status, pilot):
-        str = {'command': 'bc_authpilot', 'status': status, 'pilot':pilot}
-        self.send_bc(str)
+    def bc_authpilot(self, status, pilot):
+        data = {'command': 'bc_authpilot', 'status': status, 'pilot':pilot}
+        self.send_bc(data)
 
-    def race_info(self, pilot, parameters, info):
-        str = {'command':'bc_raceinfo', 'pilot':pilot, 'parameters':parameters, 'info':info}
-        self.send_bc(str)
+    def bc_raceinfo(self, pilot, parameters, info):
+        data = {'command':'bc_raceinfo', 'pilot':pilot, 'parameters':parameters, 'info':info}
+        self.send_bc(data)
 
-    def send_registration(self, psw):
-        str = {'message_type': 'registration', 'data': {'typereg': 'rocket', 'psw':psw, 'version': self.pc.version}}
-        str = json.dumps(str)
-        self.wsapp.send(str)
+    def bc_registration(self, psw):
+        data = {'command': 'bc_registration', 'psw':psw, 'version': self.pc.version}
+        self.send_bc(data)
 
     def send_bc(self, data):
         str = {'message_type':'bc', 'data':data}
