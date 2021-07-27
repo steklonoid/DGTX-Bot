@@ -24,7 +24,7 @@ class WSSCore(Thread):
             self.pc.l_core.setText('Ошибка соединения с ядром')
 
         def on_message(wssapp, message):
-            # print(message)
+                # print(message)
             mes = json.loads(message)
             message_type = mes.get('message_type')
             data = mes.get('data')
