@@ -41,9 +41,9 @@ class WSSCore(Thread):
                     if self.pc.flDGTXConnect and not self.pc.flDGTXAuth:
                         pilot = data.get('pilot')
                         ak = data.get('ak')
-                        self.pc.bc_authpilot(pilot, ak)
+                        self.pc.cb_authpilot(pilot, ak)
                     else:
-                        self.bc_authpilot('error', )
+                        self.bc_authpilot('error', False)
                 elif command == 'cb_setparameters':
                     parameters = data.get('parameters')
                     self.pc.setparameters(parameters)
@@ -66,8 +66,8 @@ class WSSCore(Thread):
         data = {'command': 'bc_authpilot', 'status': status, 'pilot':pilot}
         self.send_bc(data)
 
-    def bc_raceinfo(self, pilot, parameters, info):
-        data = {'command':'bc_raceinfo', 'pilot':pilot, 'parameters':parameters, 'info':info}
+    def bc_raceinfo(self, parameters, info):
+        data = {'command':'bc_raceinfo', 'parameters':parameters, 'info':info}
         self.send_bc(data)
 
     def bc_registration(self, psw):

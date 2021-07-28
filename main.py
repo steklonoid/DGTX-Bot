@@ -44,7 +44,7 @@ class Contract():
         self.status = kwargs['status']
 
 class MainWindow(QMainWindow, UiMainWindow):
-    version = '1.0.5'
+    version = '1.0.7'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
@@ -165,7 +165,7 @@ class MainWindow(QMainWindow, UiMainWindow):
             self.pb_enter.setText('вход не выполнен')
             self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
 
-    def authpilot(self, pilot, ak):
+    def cb_authpilot(self, pilot, ak):
         self.pilot = pilot
         self.dxthread.send_privat('auth', type='token', value=ak)
 
@@ -186,7 +186,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                 if k == 'symbol':
                     self.setsynbol(x)
         self.lock.release()
-        self.wsscore.bc_raceinfo(self.parameters, self.info, )
+        self.wsscore.bc_raceinfo(self.parameters, self.info)
 
     def setmarketinfo(self, marketinfo):
         # self.lock.acquire()
@@ -194,8 +194,9 @@ class MainWindow(QMainWindow, UiMainWindow):
         # self.lock.release()
 
     def sendinfo(self):
-        if self.flDGTXAuth:
-            self.wsscore.bc_raceinfo(self.pilot, self.parameters, self.info)
+        pass
+        # if self.flDGTXAuth:
+        #     self.wsscore.bc_raceinfo(self.pilot, self.parameters, self.info)
 #   ====================================================================================================================
     def fill_data(self, data):
         balance = data['traderBalance']
@@ -305,11 +306,11 @@ class MainWindow(QMainWindow, UiMainWindow):
         if status:
             self.flDGTXAuth = True
             self.wsscore.bc_authpilot('ok', self.pilot)
-            self.wsscore.bc_raceinfo(self.pilot, self.parameters, self.info)
+            self.wsscore.bc_raceinfo(self.parameters, self.info)
         else:
             self.flDGTXAuth = False
             self.pilot = False
-            self.wsscore.bc_authpilot('error', )
+            self.wsscore.bc_authpilot('error', self.pilot)
 
     def message_orderStatus(self, data):
         self.lock.acquire()
