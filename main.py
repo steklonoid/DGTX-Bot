@@ -6,7 +6,8 @@ import logging
 from PyQt5.QtWidgets import QMainWindow, QApplication
 from PyQt5.QtCore import pyqtSlot
 from mainWindow import UiMainWindow
-from wss import WSSDGTX, Worker, Senderq, InTimer, Timer, WSSCore
+from wssdgtx import WSSDGTX, Worker, Senderq, InTimer, Timer
+from wsscore import WSSCore, WorkerCore
 from loginWindow import LoginWindow
 import math
 from threading import Lock
@@ -105,9 +106,15 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-        self.wsscore = WSSCore(self)
+        coreq = queue.Queue()
+
+        self.wsscore = WSSCore(self, coreq)
         self.wsscore.daemon = True
         self.wsscore.start()
+
+        self.workercore = WorkerCore(self.receivemessagefromcore, coreq)
+        self.workercore.daemon = True
+        self.workercore.start()
 
         self.dxthread = WSSDGTX(self)
         self.dxthread.daemon = True
@@ -145,6 +152,29 @@ class MainWindow(QMainWindow, UiMainWindow):
     def closeEvent(self, *args, **kwargs):
         pass
 
+    def receivemessagefromcore(self, data):
+        command = data.get('command')
+        if command == 'cb_registration':
+            status = data.get('status')
+            if status == 'ok':
+                self.flCoreAuth = True
+            else:
+                self.flCoreAuth = False
+            self.change_auth_status()
+        elif command == 'cb_authpilot':
+            if self.flDGTXConnect and not self.flDGTXAuth:
+                pilot = data.get('pilot')
+                ak = data.get('ak')
+                self.cb_authpilot(pilot, ak)
+            else:
+                self.bc_authpilot('error', False)
+        elif command == 'cb_setparameters':
+            parameters = data.get('parameters')
+            self.setparameters(parameters)
+        elif command == 'cb_marketinfo':
+            marketinfo = data.get('info')
+            self.setmarketinfo(marketinfo)
+
     def userlogined(self, psw):
         if self.flCoreConnect and not self.flCoreAuth:
             self.wsscore.bc_registration(psw)
@@ -178,15 +208,15 @@ class MainWindow(QMainWindow, UiMainWindow):
             self.lastsymbol = symbol
 
     def setparameters(self, parameters):
-        self.lock.acquire()
+        print(parameters)
+        print(self.parameters)
         for k in self.parameters.keys():
             x = parameters.get(k)
             if x:
                 self.parameters[k] = x
                 if k == 'symbol':
                     self.setsynbol(x)
-        self.lock.release()
-        self.wsscore.bc_raceinfo(self.parameters, self.info)
+        self.wsscore.bc_raceinfo(self.parameters, None)
 
     def setmarketinfo(self, marketinfo):
         # self.lock.acquire()
@@ -306,7 +336,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         if status:
             self.flDGTXAuth = True
             self.wsscore.bc_authpilot('ok', self.pilot)
-            self.wsscore.bc_raceinfo(self.parameters, self.info)
+            self.wsscore.bc_raceinfo(None, self.info)
         else:
             self.flDGTXAuth = False
             self.pilot = False
