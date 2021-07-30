@@ -1,3 +1,4 @@
+import random
 import sys
 import time
 import queue
@@ -6,7 +7,8 @@ import logging
 from PyQt5.QtWidgets import QMainWindow, QApplication
 from PyQt5.QtCore import pyqtSlot
 from mainWindow import UiMainWindow
-from wss import WSSDGTX, Worker, Senderq, InTimer, Timer, WSSCore
+from wssdgtx import WSSDGTX, Worker, Senderq, InTimer
+from wsscore import WSSCore, CoreReceiver, CoreSender, Timer
 from loginWindow import LoginWindow
 import math
 from threading import Lock
@@ -69,6 +71,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     spotPx = 0  # текущая spot-цена
     exDist = 0  # TICK_SIZE для текущей валюты
     pnl = 0  # текущий PnL
+    timerazban = 0
 
     parameters = {'symbol':'',
                   'numconts':0,
@@ -77,13 +80,13 @@ class MainWindow(QMainWindow, UiMainWindow):
                   'dist3':0,
                   'dist4':0,
                   'dist5':0,
-                  'dist1_k':0,
-                  'dist2_k':0,
-                  'dist3_k':0,
-                  'dist4_k':0,
-                  'dist5_k':0,
+                  'dist1_k':0.0,
+                  'dist2_k':0.0,
+                  'dist3_k':0.0,
+                  'dist4_k':0.0,
+                  'dist5_k':0.0,
                   'delayaftermined':0,
-                  'bandelay':0,
+                  'bandelay':0.0,
                   'flRace':False}
 
     marketinfo = {'BTCUSD-PERP':{'avarage_volatility_128':0}, 'ETHUSD-PERP':{'avarage_volatility_128':0}}
@@ -105,9 +108,21 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-        self.wsscore = WSSCore(self)
+        corereceiveq = queue.Queue()
+
+        self.wsscore = WSSCore(self, corereceiveq)
         self.wsscore.daemon = True
         self.wsscore.start()
+
+        self.corereceiver = CoreReceiver(self.receivemessagefromcore, corereceiveq)
+        self.corereceiver.daemon = True
+        self.corereceiver.start()
+
+        self.coresendq = queue.Queue()
+
+        self.coresender = CoreSender(self.coresendq, self.wsscore)
+        self.coresender.daemon = True
+        self.coresender.start()
 
         self.dxthread = WSSDGTX(self)
         self.dxthread.daemon = True
@@ -143,11 +158,39 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.timer.start()
 
     def closeEvent(self, *args, **kwargs):
-        pass
+        parameters = self.parameters
+        parameters['flRace'] = False
+        self.setparameters(parameters)
+        time.sleep(1)
+
+    def receivemessagefromcore(self, data):
+        command = data.get('command')
+        if command == 'cb_registration':
+            status = data.get('status')
+            if status == 'ok':
+                self.flCoreAuth = True
+            else:
+                self.flCoreAuth = False
+            self.change_auth_status()
+        elif command == 'cb_authpilot':
+            if self.flDGTXConnect and not self.flDGTXAuth:
+                pilot = data.get('pilot')
+                ak = data.get('ak')
+                self.cb_authpilot(pilot, ak)
+            else:
+                data = {'command':'bc_authpilot', 'status':'error', 'pilot':None}
+                self.coresendq.put(data)
+        elif command == 'cb_setparameters':
+            parameters = data.get('parameters')
+            self.setparameters(parameters)
+        elif command == 'cb_marketinfo':
+            marketinfo = data.get('info')
+            self.setmarketinfo(marketinfo)
 
     def userlogined(self, psw):
         if self.flCoreConnect and not self.flCoreAuth:
-            self.wsscore.bc_registration(psw)
+            data = {'command':'bc_registration', 'psw':psw, 'version':self.version}
+            self.coresendq.put(data)
 
     @pyqtSlot()
     def buttonLogin_clicked(self):
@@ -169,8 +212,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.pilot = pilot
         self.dxthread.send_privat('auth', type='token', value=ak)
 
-    def setsynbol(self, symbol):
-        self.lock.acquire()
+    def setsymbol(self, symbol):
         self.parameters['symbol'] = symbol
         self.exDist = ex[symbol]['TICK_SIZE']
         if symbol != self.lastsymbol:
@@ -178,26 +220,43 @@ class MainWindow(QMainWindow, UiMainWindow):
             self.lastsymbol = symbol
 
     def setparameters(self, parameters):
+        newsymbol = parameters.get('symbol')
+        lastsymbol = self.parameters.get('symbol')
         self.lock.acquire()
-        for k in self.parameters.keys():
-            x = parameters.get(k)
-            if x:
-                self.parameters[k] = x
-                if k == 'symbol':
-                    self.setsynbol(x)
+        if newsymbol != lastsymbol:
+            self.setsymbol(newsymbol)
+        if parameters['flRace'] != self.parameters['flRace']:
+            if parameters['flRace']:
+                self.last_cellprice = 0
+                self.intimer.pnlStartTime = self.intimer.workingStartTime = time.time()
+                self.intimer.flWorking = True
+            else:
+                self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
+                self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
+                self.intimer.flWorking = False
+        self.parameters = parameters
         self.lock.release()
-        self.wsscore.bc_raceinfo(self.parameters, self.info)
+
+        data = {'command':'bc_raceinfo', 'parameters':self.parameters, 'info':None}
+        self.coresendq.put(data)
 
     def setmarketinfo(self, marketinfo):
-        # self.lock.acquire()
+        self.lock.acquire()
         self.marketinfo[marketinfo['symbol']]['avarage_volatility_128'] = marketinfo['market_volatility_128']
-        # self.lock.release()
+        self.lock.release()
 
     def sendinfo(self):
-        pass
-        # if self.flDGTXAuth:
-        #     self.wsscore.bc_raceinfo(self.pilot, self.parameters, self.info)
+        if self.flDGTXAuth:
+            self.lock.acquire()
+            self.info['racetime'] = self.intimer.workingTime
+            self.lock.release()
+            data = {'command': 'bc_raceinfo', 'parameters': None, 'info': self.info}
+            self.coresendq.put(data)
 #   ====================================================================================================================
+    def returnid(self):
+        id = str(round(time.time()) * 1000000 + random.randrange(1000000))
+        return id
+
     def fill_data(self, data):
         balance = data['traderBalance']
         self.info['balance'] = balance
@@ -208,7 +267,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         def checkLimits():
             if time.time() <= self.timerazban:
                 return False
-            if self.intimer.pnlTime <= self.parameters['l_delayaftermined']:
+            if self.intimer.pnlTime <= self.parameters['delayaftermined']:
                 return False
             return True
 
@@ -239,12 +298,11 @@ class MainWindow(QMainWindow, UiMainWindow):
 
                 if bondmod != 0:
                     distlist[price] = self.parameters['numconts'] * bondmod
-
         # завершаем ордеры, которые находятся не в списке разрешенных дистанций
         for order in self.listOrders:
             if order.status == ACTIVE:
                 if order.px not in distlist.keys():
-                    self.dxthread.send_privat('cancelOrder', symbol=self.symbol,
+                    self.dxthread.send_privat('cancelOrder', symbol=self.parameters.get('symbol'),
                                                             clOrdId=order.clOrdId)
                     order.status = CLOSING
         # автоматически открываем ордеры
@@ -259,7 +317,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                     id = self.returnid()
                     self.dxthread.send_privat('placeOrder',
                                               clOrdId=id,
-                                              symbol=self.symbol,
+                                              symbol=self.parameters.get('symbol'),
                                               ordType='LIMIT',
                                               timeInForce='GTC',
                                               side=side,
@@ -305,12 +363,12 @@ class MainWindow(QMainWindow, UiMainWindow):
         status = data.get('available')
         if status:
             self.flDGTXAuth = True
-            self.wsscore.bc_authpilot('ok', self.pilot)
-            self.wsscore.bc_raceinfo(self.parameters, self.info)
+            data = {'command':'bc_authpilot', 'status':'ok', 'pilot':self.pilot}
         else:
             self.flDGTXAuth = False
             self.pilot = False
-            self.wsscore.bc_authpilot('error', self.pilot)
+            data = {'command': 'bc_authpilot', 'status': 'error', 'pilot':None}
+        self.coresendq.put(data)
 
     def message_orderStatus(self, data):
         self.lock.acquire()
@@ -345,12 +403,12 @@ class MainWindow(QMainWindow, UiMainWindow):
         listfilledorders = [x for x in data['contracts'] if x['qty'] != 0]
         if len(listfilledorders) != 0:
             self.timerazban = time.time() + self.parameters['bandelay']
-            self.dxthread.send_privat('cancelAllOrders', symbol=self.symbol)
+            self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
             self.listOrders.clear()
             self.info['contractcount'] += len(listfilledorders)
 
         for cont in listfilledorders:
-            self.dxthread.send_privat('closeContract', symbol=self.symbol, contractId=cont['contractId'], ordType='MARKET')
+            self.dxthread.send_privat('closeContract', symbol=self.parameters.get('symbol'), contractId=cont['contractId'], ordType='MARKET')
 
         self.fill_data(data)
         self.lock.release()
@@ -384,8 +442,8 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.pnl = data['pnl']
 
         self.intimer.pnlStartTime = time.time()
-        self.dxthread.send_privat('cancelAllOrders', symbol=self.symbol)
-        self.dxthread.send_privat('getTraderStatus', symbol=self.symbol)
+        self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
+        self.dxthread.send_privat('getTraderStatus', symbol=self.parameters.get('symbol'))
         self.listOrders.clear()
         self.lock.release()
 
