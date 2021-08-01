@@ -46,7 +46,7 @@ class Contract():
         self.status = kwargs['status']
 
 class MainWindow(QMainWindow, UiMainWindow):
-    version = '1.0.7'
+    version = '1.1.0'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
@@ -158,10 +158,18 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.timer.start()
 
     def closeEvent(self, *args, **kwargs):
-        parameters = self.parameters
-        parameters['flRace'] = False
-        self.setparameters(parameters)
+        self.lock.acquire()
+        self.parameters['flRace'] = False
+        self.lock.release()
+        self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
+        self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
         time.sleep(1)
+        self.intimer.flClosing = True
+        self.senderq.flClosing = True
+        self.dxthread.flClosing = True
+        self.dxthread.wsapp.close()
+        self.wsscore.flClosing = True
+        self.wsscore.wsapp.close()
 
     def receivemessagefromcore(self, data):
         command = data.get('command')
