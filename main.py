@@ -153,7 +153,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.intimer.daemon = True
         self.intimer.start()
 
-        self.timer = Timer(self.sendinfo, 1)
+        self.timer = Timer(self.sendinfo, 10)
         self.timer.daemon = True
         self.timer.start()
 
