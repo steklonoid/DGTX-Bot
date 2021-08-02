@@ -43,18 +43,6 @@ class WSSCore(Thread):
             finally:
                 time.sleep(1)
 
-    def bc_authpilot(self, status, pilot):
-        data = {'command': 'bc_authpilot', 'status': status, 'pilot':pilot}
-        self.send_bc(data)
-
-    def bc_raceinfo(self, parameters, info):
-        data = {'command':'bc_raceinfo', 'parameters':parameters, 'info':info}
-        self.send_bc(data)
-
-    def bc_registration(self, psw):
-        data = {'command': 'bc_registration', 'psw':psw, 'version': self.pc.version}
-        self.send_bc(data)
-
     def send_bc(self, data):
         str = {'message_type':'bc', 'data':data}
         str = json.dumps(str)

@@ -129,6 +129,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.dxthread.start()
 
         self.sendq = queue.Queue()
+
         self.senderq = Senderq(self.sendq, self.dxthread)
         self.senderq.daemon = True
         self.senderq.start()
