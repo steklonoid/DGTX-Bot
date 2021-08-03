@@ -108,56 +108,6 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-        corereceiveq = queue.Queue()
-
-        self.wsscore = WSSCore(self, corereceiveq)
-        self.wsscore.daemon = True
-        self.wsscore.start()
-
-        self.corereceiver = CoreReceiver(self.receivemessagefromcore, corereceiveq)
-        self.corereceiver.daemon = True
-        self.corereceiver.start()
-
-        self.coresendq = queue.Queue()
-
-        self.coresender = CoreSender(self.coresendq, self.wsscore)
-        self.coresender.daemon = True
-        self.coresender.start()
-
-        self.dxthread = WSSDGTX(self)
-        self.dxthread.daemon = True
-        self.dxthread.start()
-
-        self.sendq = queue.Queue()
-
-        self.senderq = Senderq(self.sendq, self.dxthread)
-        self.senderq.daemon = True
-        self.senderq.start()
-
-        self.listf = {'orderbook_5':{'q':queue.LifoQueue(), 'f':self.message_orderbook_5},
-                      'index':{'q':queue.LifoQueue(), 'f':self.message_index},
-                      'tradingStatus': {'q': queue.Queue(), 'f': self.message_tradingStatus},
-                      'orderStatus': {'q': queue.Queue(), 'f': self.message_orderStatus},
-                      'orderFilled': {'q': queue.Queue(), 'f': self.message_orderFilled},
-                      'orderCancelled': {'q': queue.Queue(), 'f': self.message_orderCancelled},
-                      'traderStatus': {'q': queue.Queue(), 'f': self.message_traderStatus},
-                      'leverage': {'q': queue.Queue(), 'f': self.message_leverage},
-                      'funding': {'q': queue.Queue(), 'f': self.message_funding}}
-        self.listp = []
-        for ch in self.listf.keys():
-            p = Worker(self.listf[ch]['q'], self.listf[ch]['f'])
-            self.listp.append(p)
-            p.daemon = True
-            p.start()
-
-        self.intimer = InTimer(self)
-        self.intimer.daemon = True
-        self.intimer.start()
-
-        self.timer = Timer(self.sendinfo, 10)
-        self.timer.daemon = True
-        self.timer.start()
-
     def closeEvent(self, *args, **kwargs):
         self.lock.acquire()
         self.parameters['flRace'] = False
@@ -200,6 +150,58 @@ class MainWindow(QMainWindow, UiMainWindow):
         if self.flCoreConnect and not self.flCoreAuth:
             data = {'command':'bc_registration', 'psw':psw, 'version':self.version}
             self.coresendq.put(data)
+
+    @pyqtSlot()
+    def pb_start_clicked(self):
+        corereceiveq = queue.Queue()
+
+        self.wsscore = WSSCore(self, corereceiveq)
+        self.wsscore.daemon = True
+        self.wsscore.start()
+
+        self.corereceiver = CoreReceiver(self.receivemessagefromcore, corereceiveq)
+        self.corereceiver.daemon = True
+        self.corereceiver.start()
+
+        self.coresendq = queue.Queue()
+
+        self.coresender = CoreSender(self.coresendq, self.wsscore)
+        self.coresender.daemon = True
+        self.coresender.start()
+
+        self.dxthread = WSSDGTX(self)
+        self.dxthread.daemon = True
+        self.dxthread.start()
+
+        self.sendq = queue.Queue()
+
+        self.senderq = Senderq(self.sendq, self.dxthread)
+        self.senderq.daemon = True
+        self.senderq.start()
+
+        self.listf = {'orderbook_5': {'q': queue.LifoQueue(), 'f': self.message_orderbook_5},
+                      'index': {'q': queue.LifoQueue(), 'f': self.message_index},
+                      'tradingStatus': {'q': queue.Queue(), 'f': self.message_tradingStatus},
+                      'orderStatus': {'q': queue.Queue(), 'f': self.message_orderStatus},
+                      'orderFilled': {'q': queue.Queue(), 'f': self.message_orderFilled},
+                      'orderCancelled': {'q': queue.Queue(), 'f': self.message_orderCancelled},
+                      'traderStatus': {'q': queue.Queue(), 'f': self.message_traderStatus},
+                      'leverage': {'q': queue.Queue(), 'f': self.message_leverage},
+                      'funding': {'q': queue.Queue(), 'f': self.message_funding}}
+        self.listp = []
+        for ch in self.listf.keys():
+            p = Worker(self.listf[ch]['q'], self.listf[ch]['f'])
+            self.listp.append(p)
+            p.daemon = True
+            p.start()
+
+        self.intimer = InTimer(self)
+        self.intimer.daemon = True
+        self.intimer.start()
+
+        self.timer = Timer(self.sendinfo, 10)
+        self.timer.daemon = True
+        self.timer.start()
 
     @pyqtSlot()
     def buttonLogin_clicked(self):

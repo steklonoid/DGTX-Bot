@@ -35,7 +35,9 @@ class WSSCore(Thread):
         while not self.flClosing:
             try:
                 self.pc.l_core.setText('Устанавливаем соединение с ядром')
-                self.wsapp = websocket.WebSocketApp("ws://localhost:6789", on_open=on_open,
+                serveraddress ='ws://'+self.pc.le_serveraddress.text()+':'+self.pc.le_serverport.text()
+                # print(serveraddress)
+                self.wsapp = websocket.WebSocketApp(serveraddress, on_open=on_open,
                                                                on_close=on_close, on_error=on_error, on_message=on_message)
                 self.wsapp.run_forever()
             except:

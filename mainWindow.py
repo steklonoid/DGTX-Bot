@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QLabel
+from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QLabel, QLineEdit
 
 
 class UiMainWindow(object):
@@ -35,3 +35,12 @@ class UiMainWindow(object):
         self.l_core = QLabel()
         self.l_core.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         self.gridLayout.addWidget(self.l_core, 2, 0, 1, 1)
+
+        self.le_serveraddress = QLineEdit()
+        self.gridLayout.addWidget(self.le_serveraddress, 3, 0, 1, 1)
+        self.le_serverport = QLineEdit()
+        self.gridLayout.addWidget(self.le_serverport, 3, 1, 1, 1)
+        self.pb_start = QPushButton()
+        self.pb_start.setText('START')
+        self.gridLayout.addWidget(self.pb_start, 4, 0, 1, 1)
+        self.pb_start.clicked.connect(self.pb_start_clicked)
