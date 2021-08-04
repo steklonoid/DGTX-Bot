@@ -46,7 +46,8 @@ class Contract():
         self.status = kwargs['status']
 
 class MainWindow(QMainWindow, UiMainWindow):
-    version = '1.1.0'
+
+    version = '1.1.1'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
@@ -112,8 +113,9 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.lock.acquire()
         self.parameters['flRace'] = False
         self.lock.release()
-        self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
-        self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
+        if self.flDGTXAuth:
+            self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
+            self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
         time.sleep(1)
         self.intimer.flClosing = True
         self.senderq.flClosing = True
@@ -148,7 +150,7 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def userlogined(self, psw):
         if self.flCoreConnect and not self.flCoreAuth:
-            data = {'command':'bc_registration', 'psw':psw, 'version':self.version}
+            data = {'command':'bc_registration', 'psw':psw}
             self.coresendq.put(data)
 
     @pyqtSlot()
@@ -185,6 +187,7 @@ class MainWindow(QMainWindow, UiMainWindow):
                       'orderStatus': {'q': queue.Queue(), 'f': self.message_orderStatus},
                       'orderFilled': {'q': queue.Queue(), 'f': self.message_orderFilled},
                       'orderCancelled': {'q': queue.Queue(), 'f': self.message_orderCancelled},
+                      'contractClosed': {'q': queue.Queue(), 'f': self.message_contractClosed},
                       'traderStatus': {'q': queue.Queue(), 'f': self.message_traderStatus},
                       'leverage': {'q': queue.Queue(), 'f': self.message_leverage},
                       'funding': {'q': queue.Queue(), 'f': self.message_funding}}
@@ -434,6 +437,9 @@ class MainWindow(QMainWindow, UiMainWindow):
                 if order.origClOrdId in listtoremove:
                     self.listOrders.remove(order)
         self.lock.release()
+
+    def message_contractClosed(self, data):
+        pass
 
     def message_traderStatus(self, data):
         self.lock.acquire()
