@@ -5,7 +5,7 @@ import queue
 import logging
 
 from PyQt5.QtWidgets import QMainWindow, QApplication
-from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtCore import QSettings, pyqtSlot
 from mainWindow import UiMainWindow
 from wssdgtx import WSSDGTX, Worker, Senderq, InTimer
 from wsscore import WSSCore, CoreReceiver, CoreSender, Timer
@@ -47,7 +47,11 @@ class Contract():
 
 class MainWindow(QMainWindow, UiMainWindow):
 
-    version = '1.1.1'
+    settings = QSettings("./config.ini", QSettings.IniFormat)
+    serveraddress = settings.value('serveraddress')
+    serverport = settings.value('serverport')
+
+    version = '1.2.1'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
@@ -56,7 +60,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
     flCoreAuth = False          #   флаг авторизации в ядре
 
-    pilot = False
+    pilot = None
     lastsymbol = None
 
     listOrders = []  # список активных ордеров
@@ -109,52 +113,6 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-    def closeEvent(self, *args, **kwargs):
-        self.lock.acquire()
-        self.parameters['flRace'] = False
-        self.lock.release()
-        if self.flDGTXAuth:
-            self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
-            self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
-        time.sleep(1)
-        self.intimer.flClosing = True
-        self.senderq.flClosing = True
-        self.dxthread.flClosing = True
-        self.dxthread.wsapp.close()
-        self.wsscore.flClosing = True
-        self.wsscore.wsapp.close()
-
-    def receivemessagefromcore(self, data):
-        command = data.get('command')
-        if command == 'cb_registration':
-            status = data.get('status')
-            if status == 'ok':
-                self.flCoreAuth = True
-            else:
-                self.flCoreAuth = False
-            self.change_auth_status()
-        elif command == 'cb_authpilot':
-            if self.flDGTXConnect and not self.flDGTXAuth:
-                pilot = data.get('pilot')
-                ak = data.get('ak')
-                self.cb_authpilot(pilot, ak)
-            else:
-                data = {'command':'bc_authpilot', 'status':'error', 'pilot':None}
-                self.coresendq.put(data)
-        elif command == 'cb_setparameters':
-            parameters = data.get('parameters')
-            self.setparameters(parameters)
-        elif command == 'cb_marketinfo':
-            marketinfo = data.get('info')
-            self.setmarketinfo(marketinfo)
-
-    def userlogined(self, psw):
-        if self.flCoreConnect and not self.flCoreAuth:
-            data = {'command':'bc_registration', 'psw':psw}
-            self.coresendq.put(data)
-
-    @pyqtSlot()
-    def pb_start_clicked(self):
         corereceiveq = queue.Queue()
 
         self.wsscore = WSSCore(self, corereceiveq)
@@ -206,6 +164,62 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.timer.daemon = True
         self.timer.start()
 
+    def closeEvent(self, *args, **kwargs):
+        self.lock.acquire()
+        self.parameters['flRace'] = False
+        self.lock.release()
+        if self.flDGTXAuth:
+            self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
+            self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
+        time.sleep(1)
+        self.intimer.flClosing = True
+        self.senderq.flClosing = True
+        self.dxthread.flClosing = True
+        self.dxthread.wsapp.close()
+        self.wsscore.flClosing = True
+        self.wsscore.wsapp.close()
+
+    def receivemessagefromcore(self, data):
+        command = data.get('command')
+        if command == 'on_open':
+            self.flCoreConnect = True
+            self.l_core.setText('Соединение с ядром установлено')
+        elif command == 'on_close':
+            self.flCoreConnect = False
+            self.l_core.setText('Устанавливаем соединение с ядром')
+        elif command == 'on_error':
+            self.flCoreConnect = False
+            self.l_core.setText('Ошибка соединения с ядром')
+        elif command == 'cb_registration':
+            status = data.get('status')
+            if status == 'ok':
+                self.flCoreAuth = True
+                pilot = data.get('pilot')
+                ak = data.get('ak')
+                self.pilot = pilot
+                self.l_info.setText(pilot)
+                data = {'id': 4, 'method': 'auth', 'params': {'type':'token', 'value':ak}}
+                self.sendq.put(data)
+                self.pb_enter.setText('вход выполнен: ')
+                self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
+            else:
+                self.flCoreAuth = False
+                message = data.get('message')
+                self.l_info.setText(message)
+                self.pb_enter.setText('вход не выполнен')
+                self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
+        elif command == 'cb_setparameters':
+            parameters = data.get('parameters')
+            self.setparameters(parameters)
+        elif command == 'cb_marketinfo':
+            marketinfo = data.get('info')
+            print(marketinfo)
+            self.setmarketinfo(marketinfo)
+
+    def userlogined(self, psw):
+        data = {'command':'bc_registration', 'psw':psw}
+        self.coresendq.put(data)
+
     @pyqtSlot()
     def buttonLogin_clicked(self):
         if self.flCoreConnect and not self.flCoreAuth:
@@ -213,18 +227,6 @@ class MainWindow(QMainWindow, UiMainWindow):
             rw.userlogined.connect(lambda: self.userlogined(rw.psw))
             rw.setupUi()
             rw.exec_()
-
-    def change_auth_status(self):
-        if self.flCoreAuth:
-            self.pb_enter.setText('вход выполнен: ')
-            self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
-        else:
-            self.pb_enter.setText('вход не выполнен')
-            self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
-
-    def cb_authpilot(self, pilot, ak):
-        self.pilot = pilot
-        self.dxthread.send_privat('auth', type='token', value=ak)
 
     def setsymbol(self, symbol):
         self.parameters['symbol'] = symbol
@@ -380,8 +382,8 @@ class MainWindow(QMainWindow, UiMainWindow):
             data = {'command':'bc_authpilot', 'status':'ok', 'pilot':self.pilot}
         else:
             self.flDGTXAuth = False
-            self.pilot = False
-            data = {'command': 'bc_authpilot', 'status': 'error', 'pilot':None}
+            data = {'command': 'bc_authpilot', 'status': 'error', 'pilot':self.pilot}
+        print(data)
         self.coresendq.put(data)
 
     def message_orderStatus(self, data):

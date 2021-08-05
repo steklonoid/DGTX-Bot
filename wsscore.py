@@ -13,30 +13,24 @@ class WSSCore(Thread):
 
     def run(self) -> None:
         def on_open(wsapp):
-            self.pc.flCoreConnect = True
-            self.pc.l_core.setText('Соединение с ядром установлено')
+            data = {'command':'on_open'}
+            self.q.put(data)
 
         def on_close(wsapp, close_status_code, close_msg):
-            pass
+            data = {'command': 'on_close'}
+            self.q.put(data)
 
         def on_error(wsapp, error):
-            self.pc.flCoreConnect = False
-            self.pc.l_core.setText('Ошибка соединения с ядром')
+            data = {'command': 'on_error'}
+            self.q.put(data)
 
         def on_message(wssapp, message):
             mes = json.loads(message)
-            message_type = mes.get('message_type')
-            data = mes.get('data')
-            if message_type == 'cb':
-                self.q.put(data)
-            else:
-                pass
+            self.q.put(mes)
 
         while not self.flClosing:
             try:
-                self.pc.l_core.setText('Устанавливаем соединение с ядром')
-                serveraddress ='ws://'+self.pc.le_serveraddress.text()+':'+self.pc.le_serverport.text()
-                # print(serveraddress)
+                serveraddress ='ws://'+self.pc.serveraddress+':'+self.pc.serverport
                 self.wsapp = websocket.WebSocketApp(serveraddress, on_open=on_open,
                                                                on_close=on_close, on_error=on_error, on_message=on_message)
                 self.wsapp.run_forever()
@@ -46,8 +40,7 @@ class WSSCore(Thread):
                 time.sleep(1)
 
     def send_bc(self, data):
-        str = {'message_type':'bc', 'data':data}
-        str = json.dumps(str)
+        str = json.dumps(data)
         self.wsapp.send(str)
 
 
