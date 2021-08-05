@@ -5,7 +5,7 @@ import queue
 import logging
 
 from PyQt5.QtWidgets import QMainWindow, QApplication
-from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtCore import QSettings, pyqtSlot
 from mainWindow import UiMainWindow
 from wssdgtx import WSSDGTX, Worker, Senderq, InTimer
 from wsscore import WSSCore, CoreReceiver, CoreSender, Timer
@@ -47,7 +47,11 @@ class Contract():
 
 class MainWindow(QMainWindow, UiMainWindow):
 
-    version = '1.1.1'
+    settings = QSettings("./config.ini", QSettings.IniFormat)
+    serveraddress = settings.value('serveraddress')
+    serverport = settings.value('serverport')
+
+    version = '1.2.1'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
@@ -56,7 +60,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
     flCoreAuth = False          #   флаг авторизации в ядре
 
-    pilot = False
+    pilot = None
     lastsymbol = None
 
     listOrders = []  # список активных ордеров
@@ -126,21 +130,32 @@ class MainWindow(QMainWindow, UiMainWindow):
 
     def receivemessagefromcore(self, data):
         command = data.get('command')
-        if command == 'cb_registration':
+        if command == 'on_open':
+            self.flCoreConnect = True
+            self.l_core.setText('Соединение с ядром установлено')
+        elif command == 'on_close':
+            self.flCoreConnect = False
+            self.l_core.setText('Устанавливаем соединение с ядром')
+        elif command == 'on_error':
+            self.flCoreConnect = False
+            self.l_core.setText('Ошибка соединения с ядром')
+        elif command == 'cb_registration':
             status = data.get('status')
             if status == 'ok':
                 self.flCoreAuth = True
-            else:
-                self.flCoreAuth = False
-            self.change_auth_status()
-        elif command == 'cb_authpilot':
-            if self.flDGTXConnect and not self.flDGTXAuth:
                 pilot = data.get('pilot')
                 ak = data.get('ak')
-                self.cb_authpilot(pilot, ak)
+                self.pilot = pilot
+                self.l_info.setText(pilot)
+                self.dxthread.send_privat('auth', type='token', value=ak)
+                self.pb_enter.setText('вход выполнен: ')
+                self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
             else:
-                data = {'command':'bc_authpilot', 'status':'error', 'pilot':None}
-                self.coresendq.put(data)
+                self.flCoreAuth = False
+                message = data.get('message')
+                self.l_info.setText(message)
+                self.pb_enter.setText('вход не выполнен')
+                self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
         elif command == 'cb_setparameters':
             parameters = data.get('parameters')
             self.setparameters(parameters)
@@ -213,18 +228,6 @@ class MainWindow(QMainWindow, UiMainWindow):
             rw.userlogined.connect(lambda: self.userlogined(rw.psw))
             rw.setupUi()
             rw.exec_()
-
-    def change_auth_status(self):
-        if self.flCoreAuth:
-            self.pb_enter.setText('вход выполнен: ')
-            self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
-        else:
-            self.pb_enter.setText('вход не выполнен')
-            self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
-
-    def cb_authpilot(self, pilot, ak):
-        self.pilot = pilot
-        self.dxthread.send_privat('auth', type='token', value=ak)
 
     def setsymbol(self, symbol):
         self.parameters['symbol'] = symbol
@@ -380,8 +383,7 @@ class MainWindow(QMainWindow, UiMainWindow):
             data = {'command':'bc_authpilot', 'status':'ok', 'pilot':self.pilot}
         else:
             self.flDGTXAuth = False
-            self.pilot = False
-            data = {'command': 'bc_authpilot', 'status': 'error', 'pilot':None}
+            data = {'command': 'bc_authpilot', 'status': 'error', 'pilot':self.pilot}
         self.coresendq.put(data)
 
     def message_orderStatus(self, data):
