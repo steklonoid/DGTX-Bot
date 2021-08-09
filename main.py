@@ -7,8 +7,7 @@ import logging
 from PyQt5.QtWidgets import QMainWindow, QApplication
 from PyQt5.QtCore import QSettings, pyqtSlot
 from mainWindow import UiMainWindow
-from wssdgtx import WSSDGTX, Worker, Senderq, InTimer
-from wsscore import WSSCore, CoreReceiver, CoreSender, Timer
+from wssclient import WSSClient, FromQToF, TimeToF
 from loginWindow import LoginWindow
 import math
 from threading import Lock
@@ -51,7 +50,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     serveraddress = settings.value('serveraddress')
     serverport = settings.value('serverport')
 
-    version = '1.2.1'
+    version = '1.3.1'
     lock = Lock()
     leverage = 0                #   текущее плечо
     #   -----------------------------------------------------------
@@ -77,8 +76,10 @@ class MainWindow(QMainWindow, UiMainWindow):
     exDist = 0  # TICK_SIZE для текущей валюты
     pnl = 0  # текущий PnL
     timerazban = 0
+    pnlStartTime = 0
+    workingStartTime = 0
 
-    parameters = {'symbol':'',
+    parameters = {'symbol':'BTCUSD-PERP',
                   'numconts':0,
                   'dist1':0,
                   'dist2':0,
@@ -113,31 +114,40 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.setupui(self)
         self.show()
 
-        corereceiveq = queue.Queue()
+        # -----------------------------------------------------------------------
 
-        self.wsscore = WSSCore(self, corereceiveq)
+        corereceiveq = queue.Queue()
+        serveraddress = 'ws://' + self.serveraddress + ':' + self.serverport
+        self.wsscore = WSSClient(corereceiveq, serveraddress)
         self.wsscore.daemon = True
         self.wsscore.start()
 
-        self.corereceiver = CoreReceiver(self.receivemessagefromcore, corereceiveq)
+        self.corereceiver = FromQToF(corereceiveq, self.receivemessagefromcore)
         self.corereceiver.daemon = True
         self.corereceiver.start()
 
         self.coresendq = queue.Queue()
-
-        self.coresender = CoreSender(self.coresendq, self.wsscore)
+        self.coresender = FromQToF(self.coresendq, self.wsscore.send)
         self.coresender.daemon = True
         self.coresender.start()
 
-        self.dxthread = WSSDGTX(self)
-        self.dxthread.daemon = True
-        self.dxthread.start()
+        # -----------------------------------------------------------------------
 
-        self.sendq = queue.Queue()
+        dgtxreceiveq = queue.Queue()
+        self.wssdgtx = WSSClient(dgtxreceiveq, "wss://ws.mapi.digitexfutures.com")
+        self.wssdgtx.daemon = True
+        self.wssdgtx.start()
 
-        self.senderq = Senderq(self.sendq, self.dxthread)
-        self.senderq.daemon = True
-        self.senderq.start()
+        self.dgtxreceiver = FromQToF(dgtxreceiveq, self.receivemessagefromdgtx)
+        self.dgtxreceiver.daemon = True
+        self.dgtxreceiver.start()
+
+        self.dgtxsendq = queue.Queue()
+        self.dgtxsender = FromQToF(self.dgtxsendq, self.wssdgtx.send)
+        self.dgtxsender.daemon = True
+        self.dgtxsender.start()
+
+        #   ---------------------------------------------------------------------
 
         self.listf = {'orderbook_5': {'q': queue.LifoQueue(), 'f': self.message_orderbook_5},
                       'index': {'q': queue.LifoQueue(), 'f': self.message_index},
@@ -151,33 +161,23 @@ class MainWindow(QMainWindow, UiMainWindow):
                       'funding': {'q': queue.Queue(), 'f': self.message_funding}}
         self.listp = []
         for ch in self.listf.keys():
-            p = Worker(self.listf[ch]['q'], self.listf[ch]['f'])
+            p = FromQToF(self.listf[ch]['q'], self.listf[ch]['f'])
             self.listp.append(p)
             p.daemon = True
             p.start()
 
-        self.intimer = InTimer(self)
-        self.intimer.daemon = True
-        self.intimer.start()
+        self.intimer_th = TimeToF(self.intimer, 0.1)
+        self.intimer_th.daemon = True
+        self.intimer_th.start()
 
-        self.timer = Timer(self.sendinfo, 10)
-        self.timer.daemon = True
-        self.timer.start()
+        self.bc_raceinfo_th = TimeToF(self.bc_raceinfo, 10)
+        self.bc_raceinfo_th.daemon = True
+        self.bc_raceinfo_th.start()
 
     def closeEvent(self, *args, **kwargs):
         self.lock.acquire()
         self.parameters['flRace'] = False
         self.lock.release()
-        if self.flDGTXAuth:
-            self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
-            self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
-        time.sleep(1)
-        self.intimer.flClosing = True
-        self.senderq.flClosing = True
-        self.dxthread.flClosing = True
-        self.dxthread.wsapp.close()
-        self.wsscore.flClosing = True
-        self.wsscore.wsapp.close()
 
     def receivemessagefromcore(self, data):
         command = data.get('command')
@@ -199,22 +199,39 @@ class MainWindow(QMainWindow, UiMainWindow):
                 self.pilot = pilot
                 self.l_info.setText(pilot)
                 data = {'id': 4, 'method': 'auth', 'params': {'type':'token', 'value':ak}}
-                self.sendq.put(data)
+                self.dgtxsendq.put(data)
                 self.pb_enter.setText('вход выполнен: ')
-                self.pb_enter.setStyleSheet("color:rgb(64, 192, 64); font: bold 12px;border: none")
             else:
                 self.flCoreAuth = False
                 message = data.get('message')
                 self.l_info.setText(message)
                 self.pb_enter.setText('вход не выполнен')
-                self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
         elif command == 'cb_setparameters':
             parameters = data.get('parameters')
-            self.setparameters(parameters)
+            self.cb_setparameters(parameters)
         elif command == 'cb_marketinfo':
             marketinfo = data.get('info')
-            print(marketinfo)
-            self.setmarketinfo(marketinfo)
+            self.cb_marketinfo(marketinfo)
+
+    def receivemessagefromdgtx(self, mes):
+        ch = mes.get('ch')
+        if ch:
+            if ch == 'on_open':
+                self.flDGTXConnect = True
+                self.l_DGTX.setText('Соединение с DGTX установлено')
+            elif ch == 'on_close':
+                self.flDGTXConnect = False
+                self.l_DGTX.setText('Устанавливаем соединение с DGTX')
+            elif ch == 'on_error':
+                self.flDGTXConnect = False
+                self.l_DGTX.setText('Ошибка соединения с DGTX')
+            else:
+                self.listf[ch]['q'].put(mes.get('data'))
+
+    def intimer(self):
+        t = time.time()
+        self.pnlTime = t - self.pnlStartTime
+        self.workingTime = t - self.workingStartTime
 
     def userlogined(self, psw):
         data = {'command':'bc_registration', 'psw':psw}
@@ -232,10 +249,14 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.parameters['symbol'] = symbol
         self.exDist = ex[symbol]['TICK_SIZE']
         if symbol != self.lastsymbol:
-            self.dxthread.changeEx(symbol, self.lastsymbol)
+            if self.lastsymbol:
+                data = {'id': 2, 'method': 'unsubscribe', 'params':[self.lastsymbol + '@index', self.lastsymbol + '@orderbook_5']}
+                self.dgtxsendq.put(data)
+            data = {'id': 1, 'method': 'subscribe', 'params': [symbol + '@index', symbol + '@orderbook_5']}
+            self.dgtxsendq.put(data)
             self.lastsymbol = symbol
 
-    def setparameters(self, parameters):
+    def cb_setparameters(self, parameters):
         newsymbol = parameters.get('symbol')
         lastsymbol = self.parameters.get('symbol')
         self.lock.acquire()
@@ -244,29 +265,31 @@ class MainWindow(QMainWindow, UiMainWindow):
         if parameters['flRace'] != self.parameters['flRace']:
             if parameters['flRace']:
                 self.last_cellprice = 0
-                self.intimer.pnlStartTime = self.intimer.workingStartTime = time.time()
-                self.intimer.flWorking = True
+                self.pnlStartTime = self.workingStartTime = time.time()
+                # self.intimer.flWorking = True
             else:
-                self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
-                self.dxthread.send_privat('closePosition', symbol=self.parameters.get('symbol'), ordType='MARKET')
-                self.intimer.flWorking = False
+                data = {'id':7, 'method':'cancelAllOrders', 'params':{'symbol':self.parameters.get('symbol')}}
+                self.dgtxsendq.put(data)
+                data = {'id': 11, 'method': 'closePosition', 'params': {'symbol': self.parameters.get('symbol'), 'ordType':'MARKET'}}
+                self.dgtxsendq.put(data)
+                # self.intimer.flWorking = False
         self.parameters = parameters
         self.lock.release()
 
-        data = {'command':'bc_raceinfo', 'parameters':self.parameters, 'info':None}
+        data = {'command':'bc_raceinfo', 'parameters':self.parameters, 'info':self.info}
         self.coresendq.put(data)
 
-    def setmarketinfo(self, marketinfo):
+    def cb_marketinfo(self, marketinfo):
         self.lock.acquire()
         self.marketinfo[marketinfo['symbol']]['avarage_volatility_128'] = marketinfo['market_volatility_128']
         self.lock.release()
 
-    def sendinfo(self):
+    def bc_raceinfo(self):
         if self.flDGTXAuth:
             self.lock.acquire()
-            self.info['racetime'] = self.intimer.workingTime
+            self.info['racetime'] = self.workingTime
             self.lock.release()
-            data = {'command': 'bc_raceinfo', 'parameters': None, 'info': self.info}
+            data = {'command': 'bc_raceinfo', 'parameters': self.parameters, 'info': self.info}
             self.coresendq.put(data)
 #   ====================================================================================================================
     def returnid(self):
@@ -283,7 +306,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         def checkLimits():
             if time.time() <= self.timerazban:
                 return False
-            if self.intimer.pnlTime <= self.parameters['delayaftermined']:
+            if self.pnlTime <= self.parameters['delayaftermined']:
                 return False
             return True
 
@@ -318,8 +341,8 @@ class MainWindow(QMainWindow, UiMainWindow):
         for order in self.listOrders:
             if order.status == ACTIVE:
                 if order.px not in distlist.keys():
-                    self.dxthread.send_privat('cancelOrder', symbol=self.parameters.get('symbol'),
-                                                            clOrdId=order.clOrdId)
+                    data = {'id': 6, 'method': 'cancelOrder', 'params': {'symbol': self.parameters.get('symbol'), 'clOrdId':order.clOrdId}}
+                    self.dgtxsendq.put(data)
                     order.status = CLOSING
         # автоматически открываем ордеры
         if checkLimits():
@@ -331,14 +354,14 @@ class MainWindow(QMainWindow, UiMainWindow):
                     else:
                         side = 'SELL'
                     id = self.returnid()
-                    self.dxthread.send_privat('placeOrder',
-                                              clOrdId=id,
-                                              symbol=self.parameters.get('symbol'),
-                                              ordType='LIMIT',
-                                              timeInForce='GTC',
-                                              side=side,
-                                              px=dist,
-                                              qty=distlist[dist])
+                    data = {'id': 5, 'method': 'placeOrder', 'params': {'clOrdId': id,
+                                                                        'symbol':self.parameters.get('symbol'),
+                                                                        'ordType':'LIMIT',
+                                                                        'timeInForce':'GTC',
+                                                                        'side':side,
+                                                                        'px':dist,
+                                                                        'qty':distlist[dist]}}
+                    self.dgtxsendq.put(data)
                     self.listOrders.append(Order(
                         clOrdId=id,
                         origClOrdId=id,
@@ -379,12 +402,14 @@ class MainWindow(QMainWindow, UiMainWindow):
         status = data.get('available')
         if status:
             self.flDGTXAuth = True
-            data = {'command':'bc_authpilot', 'status':'ok', 'pilot':self.pilot}
+            coredata = {'command':'bc_authpilot', 'status':'ok', 'pilot':self.pilot}
+            self.coresendq.put(coredata)
+            dgtxdata = {'id': 5, 'method': 'getTraderStatus', 'params': {'symbol':self.parameters['symbol']}}
+            self.dgtxsendq.put(dgtxdata)
         else:
             self.flDGTXAuth = False
-            data = {'command': 'bc_authpilot', 'status': 'error', 'pilot':self.pilot}
-        print(data)
-        self.coresendq.put(data)
+            coredata = {'command': 'bc_authpilot', 'status': 'error', 'pilot':self.pilot}
+            self.coresendq.put(coredata)
 
     def message_orderStatus(self, data):
         self.lock.acquire()
@@ -419,12 +444,16 @@ class MainWindow(QMainWindow, UiMainWindow):
         listfilledorders = [x for x in data['contracts'] if x['qty'] != 0]
         if len(listfilledorders) != 0:
             self.timerazban = time.time() + self.parameters['bandelay']
-            self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
+            data = {'id': 7, 'method': 'cancelAllOrders', 'params': {'symbol': self.parameters.get('symbol')}}
+            self.dgtxsendq.put(data)
             self.listOrders.clear()
             self.info['contractcount'] += len(listfilledorders)
 
         for cont in listfilledorders:
-            self.dxthread.send_privat('closeContract', symbol=self.parameters.get('symbol'), contractId=cont['contractId'], ordType='MARKET')
+            data = {'id': 10, 'method': 'closeContract', 'params': {'symbol': self.parameters.get('symbol'),
+                                                                    'contractId':cont['contractId'],
+                                                                    'ordType':'MARKET'}}
+            self.dgtxsendq.put(data)
 
         self.fill_data(data)
         self.lock.release()
@@ -448,6 +477,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.fill_data(data)
         self.pnl = data['pnl']
         self.lock.release()
+        self.bc_raceinfo()
 
     def message_leverage(self, data):
         self.lock.acquire()
@@ -460,9 +490,11 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.info['fundingmined'] += data['payout']
         self.pnl = data['pnl']
 
-        self.intimer.pnlStartTime = time.time()
-        self.dxthread.send_privat('cancelAllOrders', symbol=self.parameters.get('symbol'))
-        self.dxthread.send_privat('getTraderStatus', symbol=self.parameters.get('symbol'))
+        self.pnlStartTime = time.time()
+        data = {'id': 7, 'method': 'cancelAllOrders', 'params': {'symbol': self.parameters.get('symbol')}}
+        self.dgtxsendq.put(data)
+        dgtxdata = {'id': 5, 'method': 'getTraderStatus', 'params': {'symbol': self.parameters['symbol']}}
+        self.dgtxsendq.put(dgtxdata)
         self.listOrders.clear()
         self.lock.release()
 

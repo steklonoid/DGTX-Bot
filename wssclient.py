@@ -4,34 +4,36 @@ import json
 import time
 
 
-class WSSCore(Thread):
-    def __init__(self, pc, q):
-        super(WSSCore, self).__init__()
-        self.pc = pc
+class WSSClient(Thread):
+    def __init__(self, q, address):
+        super(WSSClient, self).__init__()
         self.q = q
+        self.address = address
         self.flClosing = False
 
     def run(self) -> None:
         def on_open(wsapp):
-            data = {'command':'on_open'}
+            data = {'command': 'on_open', 'ch': 'on_open'}
             self.q.put(data)
 
         def on_close(wsapp, close_status_code, close_msg):
-            data = {'command': 'on_close'}
+            data = {'command': 'on_close', 'ch': 'on_close'}
             self.q.put(data)
 
         def on_error(wsapp, error):
-            data = {'command': 'on_error'}
+            data = {'command': 'on_error', 'ch': 'on_error'}
             self.q.put(data)
 
         def on_message(wssapp, message):
-            mes = json.loads(message)
-            self.q.put(mes)
+            if message == 'ping':
+                self.wsapp.send('pong')
+            else:
+                data = json.loads(message)
+                self.q.put(data)
 
         while not self.flClosing:
             try:
-                serveraddress ='ws://'+self.pc.serveraddress+':'+self.pc.serverport
-                self.wsapp = websocket.WebSocketApp(serveraddress, on_open=on_open,
+                self.wsapp = websocket.WebSocketApp(self.address, on_open=on_open,
                                                                on_close=on_close, on_error=on_error, on_message=on_message)
                 self.wsapp.run_forever()
             except:
@@ -39,17 +41,20 @@ class WSSCore(Thread):
             finally:
                 time.sleep(1)
 
-    def send_bc(self, data):
+    def send(self, data):
         str = json.dumps(data)
-        self.wsapp.send(str)
+        try:
+            self.wsapp.send(str)
+        except:
+            pass
 
 
-class CoreReceiver(Thread):
+class FromQToF(Thread):
 
-    def __init__(self, f, q):
-        super(CoreReceiver, self).__init__()
-        self.f = f
+    def __init__(self, q, f):
+        super(FromQToF, self).__init__()
         self.q = q
+        self.f = f
 
     def run(self) -> None:
         while True:
@@ -57,23 +62,10 @@ class CoreReceiver(Thread):
             self.f(data)
 
 
-class CoreSender(Thread):
-
-    def __init__(self, q, th):
-        super(CoreSender, self).__init__()
-        self.q = q
-        self.th = th
-
-    def run(self) -> None:
-        while True:
-            data = self.q.get()
-            self.th.send_bc(data)
-
-
-class Timer(Thread):
+class TimeToF(Thread):
 
     def __init__(self, f, delay):
-        super(Timer, self).__init__()
+        super(TimeToF, self).__init__()
         self.f = f
         self.delay = delay
 
@@ -81,4 +73,3 @@ class Timer(Thread):
         while True:
             self.f()
             time.sleep(self.delay)
-

@@ -23,7 +23,6 @@ class UiMainWindow(object):
 
         self.pb_enter = QPushButton()
         self.pb_enter.setText('вход не выполнен')
-        self.pb_enter.setStyleSheet("color:rgb(255, 96, 96); font: bold 12px;border: none")
         self.pb_enter.setCursor(Qt.PointingHandCursor)
         self.gridLayout.addWidget(self.pb_enter, 0, 0, 1, 1)
         self.pb_enter.clicked.connect(self.buttonLogin_clicked)
