@@ -5,10 +5,11 @@ import time
 
 
 class WSSClient(Thread):
-    def __init__(self, q, address):
+    def __init__(self, q, address, senddelay):
         super(WSSClient, self).__init__()
         self.q = q
         self.address = address
+        self.senddelay = senddelay
         self.flClosing = False
 
     def run(self) -> None:
@@ -45,7 +46,8 @@ class WSSClient(Thread):
         str = json.dumps(data)
         try:
             self.wsapp.send(str)
-            time.sleep(0.05)
+            if self.senddelay > 0:
+                time.sleep(self.senddelay)
         except:
             pass
 

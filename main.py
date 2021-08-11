@@ -19,8 +19,9 @@ class MainWindow(QMainWindow, UiMainWindow):
     settings = QSettings("./config.ini", QSettings.IniFormat)
     serveraddress = settings.value('serveraddress')
     serverport = settings.value('serverport')
+    senddelay = settings.value('senddelay')
 
-    version = '1.4.3'
+    version = '1.4.4'
     lock = Lock()
 
     #   -----------------------------------------------------------
@@ -56,7 +57,7 @@ class MainWindow(QMainWindow, UiMainWindow):
 
         corereceiveq = queue.Queue()
         serveraddress = 'ws://' + self.serveraddress + ':' + self.serverport
-        self.wsscore = WSSClient(corereceiveq, serveraddress)
+        self.wsscore = WSSClient(corereceiveq, serveraddress, 0)
         self.wsscore.daemon = True
         self.wsscore.start()
 
@@ -72,7 +73,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         # -----------------------------------------------------------------------
 
         dgtxreceiveq = queue.Queue()
-        self.wssdgtx = WSSClient(dgtxreceiveq, "wss://ws.mapi.digitexfutures.com")
+        self.wssdgtx = WSSClient(dgtxreceiveq, "wss://ws.mapi.digitexfutures.com", self.senddelay)
         self.wssdgtx.daemon = True
         self.wssdgtx.start()
 
