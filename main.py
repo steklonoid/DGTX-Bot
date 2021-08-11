@@ -20,7 +20,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     serveraddress = settings.value('serveraddress')
     serverport = settings.value('serverport')
 
-    version = '1.4.1'
+    version = '1.4.2'
     lock = Lock()
 
     #   -----------------------------------------------------------

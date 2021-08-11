@@ -45,6 +45,7 @@ class WSSClient(Thread):
         str = json.dumps(data)
         try:
             self.wsapp.send(str)
+            time.sleep(0.05)
         except:
             pass
 

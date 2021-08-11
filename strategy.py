@@ -13,7 +13,6 @@ CLOSING = 2
 
 MAXORDERDIST = 5
 
-
 class Order():
     def __init__(self, **kwargs):
         self.clOrdId = kwargs['clOrdId']
@@ -249,6 +248,7 @@ class LM_2():
     parameters = {'symbol': 'BTCUSD-PERP',
                   'exDist': 5,
                   'numconts': 0,
+                  'maxorderdist':5,
                   'dist1_k': 0.0,
                   'dist2_k': 0.0,
                   'dist3_k': 0.0,
@@ -313,7 +313,7 @@ class LM_2():
 
         distlist = {}
         if self.current_cellprice != 0:
-            for spotdist in range(-MAXORDERDIST, MAXORDERDIST + 1):
+            for spotdist in range(-self.parameters['maxorderdist'], self.parameters['maxorderdist'] + 1):
                 price = self.current_cellprice + spotdist * self.parameters['exDist']
                 if price <= min(self.current_maxbid, self.current_cellprice):
                     bonddist = (self.current_maxbid - price) // self.parameters['exDist']
@@ -321,7 +321,7 @@ class LM_2():
                     bonddist = (price - self.current_minask) // self.parameters['exDist']
                 else:
                     bonddist = 0
-                bonddist = min(bonddist, MAXORDERDIST)
+                bonddist = min(bonddist, 5)
 
                 bondmod = 0
                 av128 = self.marketinfo[self.parameters['symbol']]['avarage_volatility_128']
