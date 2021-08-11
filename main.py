@@ -147,6 +147,8 @@ class MainWindow(QMainWindow, UiMainWindow):
         elif command == 'cb_marketinfo':
             marketinfo = data.get('info')
             self.cb_marketinfo(marketinfo)
+        else:
+            pass
 
     def receivemessagefromdgtx(self, mes):
         ch = mes.get('ch')
@@ -194,7 +196,6 @@ class MainWindow(QMainWindow, UiMainWindow):
                 self.workingStartTime = time.time()
             else:
                 self.strategy.stoprace()
-
             self.flRace = flRace
         self.lock.release()
 
