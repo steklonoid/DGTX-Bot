@@ -21,7 +21,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     serverport = settings.value('serverport')
     senddelay = settings.value('senddelay')
 
-    version = '1.4.4'
+    version = '1.4.5'
     lock = Lock()
 
     #   -----------------------------------------------------------
