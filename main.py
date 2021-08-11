@@ -20,7 +20,7 @@ class MainWindow(QMainWindow, UiMainWindow):
     serveraddress = settings.value('serveraddress')
     serverport = settings.value('serverport')
 
-    version = '1.4.2'
+    version = '1.4.3'
     lock = Lock()
 
     #   -----------------------------------------------------------
@@ -194,6 +194,10 @@ class MainWindow(QMainWindow, UiMainWindow):
             if flRace:
                 self.strategy.startrace()
                 self.workingStartTime = time.time()
+                self.info['contractmined'] = 0
+                self.strategy.contractcount = 0
+                self.info['fundingmined'] = 0
+                self.info['fundingcount'] = 0
             else:
                 self.strategy.stoprace()
             self.flRace = flRace
