@@ -8,7 +8,7 @@ from mainWindow import UiMainWindow
 from wssclient import WSSClient, FromQToF, TimeToF
 from loginWindow import LoginWindow
 from threading import Lock
-from strategy import LM_1, LM_2
+from strategy import LM1, LM1_TR1
 
 
 ex = {'BTCUSD-PERP':{'TICK_SIZE':5, 'TICK_VALUE':0.1},'ETHUSD-PERP':{'TICK_SIZE':1, 'TICK_VALUE':1}}
@@ -25,12 +25,11 @@ class MainWindow(QMainWindow, UiMainWindow):
     lock = Lock()
 
     #   -----------------------------------------------------------
-    flDGTXConnect = False       #   флаг соединения с сайтом DGTX
-    flCoreConnect = False       #   флаг соединения с ядром
     flDGTXAuth = False          #   флаг авторизации на сайте (введения правильного API KEY)
     flCoreAuth = False          #   флаг авторизации в ядре
 
     pilot = None
+    ak = None
     symbol = None
     flRace = False
 
@@ -109,7 +108,7 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.bc_raceinfo_th.daemon = True
         self.bc_raceinfo_th.start()
 
-        self.strategy = LM_2(self.dgtxsendq)
+        self.strategy = LM1_TR1(self.dgtxsendq)
 
     def closeEvent(self, *args, **kwargs):
         self.strategy.stoprace()
@@ -118,13 +117,12 @@ class MainWindow(QMainWindow, UiMainWindow):
     def receivemessagefromcore(self, data):
         command = data.get('command')
         if command == 'on_open':
-            self.flCoreConnect = True
+            if self.flCoreAuth:
+                self.bc_registration()
             self.l_core.setText('Соединение с ядром установлено')
         elif command == 'on_close':
-            self.flCoreConnect = False
             self.l_core.setText('Устанавливаем соединение с ядром')
         elif command == 'on_error':
-            self.flCoreConnect = False
             self.l_core.setText('Ошибка соединения с ядром')
         elif command == 'cb_registration':
             status = data.get('status')
@@ -133,12 +131,12 @@ class MainWindow(QMainWindow, UiMainWindow):
                 pilot = data.get('pilot')
                 ak = data.get('ak')
                 self.pilot = pilot
+                self.ak = ak
                 self.l_info.setText(pilot)
                 data = {'id': 4, 'method': 'auth', 'params': {'type':'token', 'value':ak}}
                 self.dgtxsendq.put(data)
                 self.pb_enter.setText('вход выполнен: ')
             else:
-                self.flCoreAuth = False
                 message = data.get('message')
                 self.l_info.setText(message)
                 self.pb_enter.setText('вход не выполнен')
@@ -155,24 +153,44 @@ class MainWindow(QMainWindow, UiMainWindow):
         ch = mes.get('ch')
         if ch:
             if ch == 'on_open':
-                self.flDGTXConnect = True
                 self.l_DGTX.setText('Соединение с DGTX установлено')
+                if self.flDGTXAuth:
+                    data = {'id': 4, 'method': 'auth', 'params': {'type': 'token', 'value': self.ak}}
+                    self.dgtxsendq.put(data)
             elif ch == 'on_close':
-                self.flDGTXConnect = False
                 self.l_DGTX.setText('Устанавливаем соединение с DGTX')
             elif ch == 'on_error':
-                self.flDGTXConnect = False
                 self.l_DGTX.setText('Ошибка соединения с DGTX')
             else:
                 self.listf[ch]['q'].put(mes.get('data'))
 
-    def userlogined(self, psw):
-        data = {'command':'bc_registration', 'psw':psw}
+    def bc_registration(self):
+        data = {'command': 'bc_registration', 'psw': self.psw}
         self.coresendq.put(data)
+
+    def bc_authpilot(self, status):
+        coredata = {'command': 'bc_authpilot', 'status': status, 'pilot': self.pilot}
+        self.coresendq.put(coredata)
+
+    def bc_raceinfo(self):
+        if self.flDGTXAuth:
+            self.lock.acquire()
+            self.info['contractcount'] = self.strategy.contractcount
+            if self.flRace:
+                self.info['racetime'] = time.time() - self.workingStartTime
+            else:
+                self.info['racetime'] = 0
+            self.lock.release()
+            data = {'command': 'bc_raceinfo', 'parameters': self.strategy.parameters, 'info': self.info}
+            self.coresendq.put(data)
+
+    def userlogined(self, psw):
+        self.psw = psw
+        self.bc_registration()
 
     @pyqtSlot()
     def buttonLogin_clicked(self):
-        if self.flCoreConnect and not self.flCoreAuth:
+        if self.wsscore.flConnect and not self.flCoreAuth:
             rw = LoginWindow()
             rw.userlogined.connect(lambda: self.userlogined(rw.psw))
             rw.setupUi()
@@ -212,17 +230,6 @@ class MainWindow(QMainWindow, UiMainWindow):
         self.strategy.setmarketinfo(marketinfo)
         self.lock.release()
 
-    def bc_raceinfo(self):
-        if self.flDGTXAuth:
-            self.lock.acquire()
-            self.info['contractcount'] = self.strategy.contractcount
-            if self.flRace:
-                self.info['racetime'] = time.time() - self.workingStartTime
-            else:
-                self.info['racetime'] = 0
-            self.lock.release()
-            data = {'command': 'bc_raceinfo', 'parameters': self.strategy.parameters, 'info': self.info}
-            self.coresendq.put(data)
 #   ====================================================================================================================
 
 
@@ -248,14 +255,12 @@ class MainWindow(QMainWindow, UiMainWindow):
         status = data.get('available')
         if status:
             self.flDGTXAuth = True
-            coredata = {'command':'bc_authpilot', 'status':'ok', 'pilot':self.pilot}
-            self.coresendq.put(coredata)
+            self.bc_authpilot('ok')
             dgtxdata = {'id': 5, 'method': 'getTraderStatus', 'params': {'symbol':self.strategy.parameters['symbol']}}
             self.dgtxsendq.put(dgtxdata)
         else:
             self.flDGTXAuth = False
-            coredata = {'command': 'bc_authpilot', 'status': 'error', 'pilot':self.pilot}
-            self.coresendq.put(coredata)
+            self.bc_authpilot('error')
 
     def message_orderStatus(self, data):
         self.lock.acquire()

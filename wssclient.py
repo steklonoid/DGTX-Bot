@@ -11,17 +11,21 @@ class WSSClient(Thread):
         self.address = address
         self.senddelay = senddelay
         self.flClosing = False
+        self.flConnect = False
 
     def run(self) -> None:
         def on_open(wsapp):
+            self.flConnect = True
             data = {'command': 'on_open', 'ch': 'on_open'}
             self.q.put(data)
 
         def on_close(wsapp, close_status_code, close_msg):
+            self.flConnect = False
             data = {'command': 'on_close', 'ch': 'on_close'}
             self.q.put(data)
 
         def on_error(wsapp, error):
+            self.flConnect = False
             data = {'command': 'on_error', 'ch': 'on_error'}
             self.q.put(data)
 
@@ -45,9 +49,10 @@ class WSSClient(Thread):
     def send(self, data):
         str = json.dumps(data)
         try:
-            self.wsapp.send(str)
-            if self.senddelay > 0:
-                time.sleep(self.senddelay)
+            if self.flConnect:
+                self.wsapp.send(str)
+                if self.senddelay > 0:
+                    time.sleep(self.senddelay)
         except:
             pass
 
